@@ -1,0 +1,47 @@
+:host { display: block; min-height: 100vh; }
+.page-shell { min-height: 100vh; display: grid; place-content: center; padding: 40px 20px 24px; background: radial-gradient(ellipse at 50% 0%, #e8efff 0, #f5f7fb 43%, #f5f7fb 100%); color: #182238; }
+.connection-card { width: min(100%, 690px); padding: 30px; border: 1px solid #e4e9f1; border-radius: 18px; background: #fff; box-shadow: 0 20px 60px #26395712; }
+.brand-row, .status-panel, .connection-flow, .flow-node, .response-heading, .card-footer { display: flex; align-items: center; }
+.brand-row { gap: 10px; }
+.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #315cda; color: white; font-size: 12px; font-weight: 800; letter-spacing: -.5px; }
+.brand-name { font-size: 14px; font-weight: 750; letter-spacing: -.2px; }
+.environment { margin-left: auto; padding: 6px 9px; border: 1px solid #e6eaf0; border-radius: 6px; color: #79849a; font-size: 9px; font-weight: 750; letter-spacing: .8px; }
+.intro { margin: 38px 0 24px; }
+.eyebrow { margin: 0 0 12px; color: #5472c9; font-size: 10px; font-weight: 750; letter-spacing: 1.5px; }
+.eyebrow span { display: inline-block; width: 19px; height: 1px; margin: 0 5px 3px; background: #aebadd; }
+h1 { margin: 0; color: #172238; font-size: clamp(25px, 5vw, 32px); letter-spacing: -1.1px; }
+.subtitle { max-width: 480px; margin: 10px 0 0; color: #758096; font-size: 13px; line-height: 1.6; }
+.status-panel { gap: 14px; min-height: 82px; padding: 15px; border: 1px solid #d8e5db; border-radius: 12px; background: #f6fbf7; }
+.status-panel.is-disconnected { border-color: #f1d9d9; background: #fff8f7; }
+.status-panel:not(.is-connected):not(.is-disconnected) { border-color: #dfe6f2; background: #f8faff; }
+.status-icon { display: grid; flex: 0 0 38px; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #e2f3e6; color: #278546; font-size: 20px; font-weight: 700; }
+.is-disconnected .status-icon { background: #fbe8e5; color: #bb4d42; }
+.status-copy { display: grid; gap: 4px; min-width: 0; }
+.status-label, .response-heading { color: #77849a; font-size: 9px; font-weight: 750; letter-spacing: 1px; }
+.status-copy strong { color: #263449; font-size: 14px; }
+.status-detail { overflow-wrap: anywhere; color: #77849a; font-size: 11px; }
+.live-indicator { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #48845a; font-size: 9px; font-weight: 750; letter-spacing: .8px; white-space: nowrap; }
+.live-indicator i { width: 6px; height: 6px; border-radius: 50%; background: #55ae6d; box-shadow: 0 0 0 3px #55ae6d1e; }
+.connection-flow { justify-content: space-between; gap: 12px; margin: 23px 2px; }
+.flow-node { gap: 10px; }
+.node-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: #eef1ff; color: #4b63c8; font-size: 20px; }
+.server-icon { background: #edf5f0; color: #4a8661; }
+.flow-node b, .flow-node small { display: block; }
+.flow-node b { color: #263449; font-size: 12px; }
+.flow-node small { margin-top: 3px; color: #929bad; font-size: 10px; }
+.flow-line { position: relative; flex: 1; height: 1px; border-top: 1px dashed #cbd3df; text-align: center; }
+.flow-line span { position: relative; top: -7px; padding: 0 7px; background: white; color: #929bad; font-size: 9px; }
+.flow-line.active { border-color: #58a56d; }
+.flow-line.active span { color: #48845a; }
+.response-box { overflow: hidden; margin-top: 22px; border: 1px solid #e6eaf0; border-radius: 10px; background: #fbfcfe; }
+.response-heading { justify-content: space-between; gap: 10px; padding: 11px 13px; border-bottom: 1px solid #e8ecf2; }
+.response-heading code { color: #5270bf; font-size: 10px; letter-spacing: 0; }
+pre { overflow-x: auto; margin: 0; padding: 13px; color: #536177; font-size: 11px; line-height: 1.6; }
+.card-footer { justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 17px; border-top: 1px solid #edf0f4; color: #929bad; font-size: 10px; }
+button { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid #dce3ed; border-radius: 7px; background: white; color: #354763; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; transition: background .15s, border-color .15s; }
+button:hover:not(:disabled) { border-color: #9eafd9; background: #f6f8ff; }
+button:disabled { cursor: wait; opacity: .55; }
+button span { color: #4d68c2; font-size: 16px; }
+.page-note { margin: 18px 0 0; color: #9aa4b4; font-size: 10px; text-align: center; }
+.page-note span { padding: 0 4px; }
+@media (max-width: 560px) { .connection-card { padding: 21px 18px; } .intro { margin-top: 30px; } .live-indicator { font-size: 0; } .connection-flow { gap: 7px; } .flow-node { gap: 7px; } .flow-node small { font-size: 9px; } .flow-line span { padding: 0 4px; font-size: 8px; } .response-heading { align-items: flex-start; flex-direction: column; } }
