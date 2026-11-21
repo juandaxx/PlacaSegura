@@ -11,125 +11,153 @@ class TarifaEndpointTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const MENSAJE_RN02 = 'La tarifa nocturna debe ser menor que la diurna.';
+
     private int $sedeId;
-
-    private int $carroId;
-
-    private int $motoId;
-
-    private int $diurnaId;
-
-    private int $nocturnaId;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->sedeId = DB::table('sedes')->insertGetId(['nombre' => 'Sede Centro', 'direccion' => 'Calle 1 # 2-3']);
-        $this->carroId = DB::table('tipos_vehiculo')->insertGetId(['nombre' => 'carro', 'patron_placa' => '^[A-Z]{3}[0-9]{3}$']);
-        $this->motoId = DB::table('tipos_vehiculo')->insertGetId(['nombre' => 'moto', 'patron_placa' => '^[A-Z]{3}[0-9]{2}[A-Z]$']);
-        $this->diurnaId = DB::table('franjas')->insertGetId(['nombre' => 'diurna', 'hora_inicio' => '06:00:00', 'hora_fin' => '18:00:00']);
-        $this->nocturnaId = DB::table('franjas')->insertGetId(['nombre' => 'nocturna', 'hora_inicio' => '18:00:00', 'hora_fin' => '06:00:00']);
+        DB::table('tipos_vehiculo')->insert([
+            ['nombre' => 'carro', 'patron_placa' => '^[A-Z]{3}[0-9]{3}$'],
+            ['nombre' => 'moto', 'patron_placa' => '^[A-Z]{3}[0-9]{2}[A-Z]$'],
+        ]);
+        DB::table('franjas')->insert([
+            ['nombre' => 'diurna', 'hora_inicio' => '06:00:00', 'hora_fin' => '18:00:00'],
+            ['nombre' => 'nocturna', 'hora_inicio' => '18:00:00', 'hora_fin' => '06:00:00'],
+        ]);
     }
 
-    public function test_crea_una_tarifa(): void
+    public function test_crea_una_tarifa_por_nombre_de_tipo_y_franja(): void
     {
-        $this->crearTarifa($this->carroId, $this->diurnaId, 5000)
+        $this->crearTarifa('carro', 'diurna', 5000)
             ->assertCreated()
             ->assertJsonPath('data.sede_id', $this->sedeId)
+            ->assertJsonPath('data.tipo_vehiculo', 'carro')
             ->assertJsonPath('data.franja', 'diurna')
-            ->assertJsonPath('data.valor', '5000.00');
+            ->assertJsonPath('data.valor', 5000);
     }
 
-    public function test_rechaza_una_nocturna_mayor_o_igual_a_la_diurna(): void
+    public function test_rechaza_una_nocturna_mayor_o_igual_a_la_diurna_con_error_de_validacion(): void
     {
-        $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->assertCreated();
+        $this->crearTarifa('carro', 'diurna', 5000)->assertCreated();
 
-        $this->crearTarifa($this->carroId, $this->nocturnaId, 6000)
+        $this->crearTarifa('carro', 'nocturna', 6000)
             ->assertUnprocessable()
-            ->assertJsonPath('motivo', 'nocturna_no_menor_que_diurna');
-        $this->crearTarifa($this->carroId, $this->nocturnaId, 5000)
+            ->assertJsonPath('message', self::MENSAJE_RN02)
+            ->assertJsonValidationErrors(['valor' => self::MENSAJE_RN02]);
+        $this->crearTarifa('carro', 'nocturna', 5000)
             ->assertUnprocessable()
-            ->assertJsonPath('motivo', 'nocturna_no_menor_que_diurna');
+            ->assertJsonValidationErrors(['valor' => self::MENSAJE_RN02]);
 
         $this->assertDatabaseCount('tarifas', 1);
     }
 
     public function test_acepta_una_nocturna_menor_que_la_diurna(): void
     {
-        $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->assertCreated();
+        $this->crearTarifa('carro', 'diurna', 5000)->assertCreated();
 
-        $this->crearTarifa($this->carroId, $this->nocturnaId, 4000)
+        $this->crearTarifa('carro', 'nocturna', 3000)
             ->assertCreated()
-            ->assertJsonPath('data.franja', 'nocturna');
+            ->assertJsonPath('data.franja', 'nocturna')
+            ->assertJsonPath('data.valor', 3000);
     }
 
     public function test_permite_moto_en_cero_en_ambas_franjas(): void
     {
-        $this->crearTarifa($this->motoId, $this->diurnaId, 0)->assertCreated();
-        $this->crearTarifa($this->motoId, $this->nocturnaId, 0)->assertCreated();
+        $this->crearTarifa('moto', 'diurna', 0)->assertCreated();
+        $this->crearTarifa('moto', 'nocturna', 0)->assertCreated();
     }
 
     public function test_no_permite_bajar_la_diurna_por_debajo_de_la_nocturna(): void
     {
-        $diurnaId = $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->json('data.id');
-        $this->crearTarifa($this->carroId, $this->nocturnaId, 4000)->assertCreated();
+        $diurnaId = $this->crearTarifa('carro', 'diurna', 5000)->json('data.id');
+        $this->crearTarifa('carro', 'nocturna', 4000)->assertCreated();
 
         $this->putJson("/api/tarifas/{$diurnaId}", ['valor' => 3500])
             ->assertUnprocessable()
-            ->assertJsonPath('motivo', 'nocturna_no_menor_que_diurna');
+            ->assertJsonValidationErrors(['valor' => self::MENSAJE_RN02]);
 
         $this->assertDatabaseHas('tarifas', ['id' => $diurnaId, 'valor' => 5000]);
     }
 
-    public function test_actualiza_el_valor_de_una_tarifa(): void
+    public function test_modifica_el_valor_de_una_tarifa(): void
     {
-        $id = $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->json('data.id');
+        $id = $this->crearTarifa('carro', 'diurna', 5000)->json('data.id');
 
-        $this->putJson("/api/tarifas/{$id}", ['valor' => 5500])
+        $this->putJson("/api/tarifas/{$id}", ['valor' => 5500.5])
             ->assertOk()
-            ->assertJsonPath('data.valor', '5500.00');
+            ->assertJsonPath('data.valor', 5500.5);
     }
 
     public function test_rechaza_una_tarifa_duplicada(): void
     {
-        $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->assertCreated();
+        $this->crearTarifa('carro', 'diurna', 5000)->assertCreated();
 
-        $this->crearTarifa($this->carroId, $this->diurnaId, 4500)
-            ->assertConflict()
-            ->assertJsonPath('motivo', 'tarifa_ya_existe');
+        $this->crearTarifa('carro', 'diurna', 4500)->assertConflict();
     }
 
     public function test_valida_los_datos(): void
     {
         $this->postJson('/api/tarifas', [])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['sede_id', 'tipo_vehiculo_id', 'franja_id', 'valor']);
+            ->assertJsonValidationErrors(['tipo_vehiculo', 'franja', 'valor']);
 
-        $this->crearTarifa($this->carroId, $this->diurnaId, -100)
+        $this->crearTarifa('bicicleta', 'tarde', -100)
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['valor']);
+            ->assertJsonValidationErrors(['tipo_vehiculo', 'franja', 'valor']);
     }
 
-    public function test_lista_y_consulta_las_tarifas(): void
+    public function test_con_varias_sedes_exige_sede_id(): void
     {
-        $id = $this->crearTarifa($this->carroId, $this->diurnaId, 5000)->json('data.id');
-        $this->crearTarifa($this->motoId, $this->diurnaId, 0)->assertCreated();
+        $otraSedeId = DB::table('sedes')->insertGetId(['nombre' => 'Sede Norte', 'direccion' => 'Calle 100']);
 
-        $this->getJson("/api/tarifas?tipo_vehiculo_id={$this->carroId}")->assertOk()->assertJsonCount(1, 'data');
-        $this->getJson("/api/tarifas?sede_id={$this->sedeId}")->assertOk()->assertJsonCount(2, 'data');
-        $this->getJson("/api/tarifas/{$id}")->assertOk()->assertJsonPath('data.id', $id);
-        $this->getJson('/api/tarifas/9999')->assertNotFound();
+        $this->crearTarifa('carro', 'diurna', 5000)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sede_id']);
+
+        $this->crearTarifa('carro', 'diurna', 5000, ['sede_id' => $otraSedeId])
+            ->assertCreated()
+            ->assertJsonPath('data.sede_id', $otraSedeId);
+    }
+
+    public function test_lista_las_tarifas_paginadas(): void
+    {
+        $this->crearTarifa('carro', 'diurna', 5000)->assertCreated();
+        $this->crearTarifa('carro', 'nocturna', 3000)->assertCreated();
+        $this->crearTarifa('moto', 'diurna', 0)->assertCreated();
+
+        $this->getJson('/api/tarifas?per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.tipo_vehiculo', 'carro')
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('meta.per_page', 2);
+
+        $this->getJson('/api/tarifas?per_page=2&page=2')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.tipo_vehiculo', 'moto');
+
+        $this->getJson('/api/tarifas?per_page=500')->assertUnprocessable();
+    }
+
+    public function test_modificar_una_tarifa_inexistente_responde_404(): void
+    {
         $this->putJson('/api/tarifas/9999', ['valor' => 100])->assertNotFound();
     }
 
-    private function crearTarifa(int $tipoVehiculoId, int $franjaId, int|float $valor): TestResponse
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function crearTarifa(string $tipoVehiculo, string $franja, int|float $valor, array $extra = []): TestResponse
     {
-        return $this->postJson('/api/tarifas', [
-            'sede_id' => $this->sedeId,
-            'tipo_vehiculo_id' => $tipoVehiculoId,
-            'franja_id' => $franjaId,
+        return $this->postJson('/api/tarifas', array_merge([
+            'tipo_vehiculo' => $tipoVehiculo,
+            'franja' => $franja,
             'valor' => $valor,
-        ]);
+        ], $extra));
     }
 }

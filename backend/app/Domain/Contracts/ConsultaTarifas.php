@@ -2,6 +2,7 @@
 
 namespace App\Domain\Contracts;
 
+use App\Domain\Comun\Pagina;
 use App\Domain\Tarifa\Tarifa;
 
 /**
@@ -9,10 +10,10 @@ use App\Domain\Tarifa\Tarifa;
  */
 interface ConsultaTarifas
 {
-    public function buscarPorId(int $id): ?Tarifa;
-
     /**
-     * @return list<Tarifa>
+     * Tarifas ordenadas por sede, tipo de vehiculo y franja.
+     *
+     * @return Pagina<Tarifa>
      */
-    public function listar(?int $sedeId = null, ?int $tipoVehiculoId = null): array;
+    public function listar(int $pagina, int $porPagina): Pagina;
 }

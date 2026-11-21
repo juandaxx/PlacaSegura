@@ -21,10 +21,9 @@ class TarifaResource extends JsonResource
         return [
             'id' => $this->resource->id,
             'sede_id' => $this->resource->sedeId,
-            'tipo_vehiculo_id' => $this->resource->tipoVehiculoId,
-            'franja_id' => $this->resource->franjaId,
+            'tipo_vehiculo' => $this->resource->tipoVehiculo,
             'franja' => $this->resource->franja->value,
-            'valor' => $this->resource->valor,
+            'valor' => Dinero::aNumero($this->resource->valor),
         ];
     }
 }

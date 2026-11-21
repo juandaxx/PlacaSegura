@@ -12,7 +12,14 @@ interface TarifaRepository
 {
     public function buscarPorId(int $id): ?Tarifa;
 
-    public function nombreFranja(int $franjaId): ?NombreFranja;
+    /**
+     * Id de la sede cuando existe exactamente una; null si no hay ninguna o hay varias.
+     */
+    public function idSedeUnica(): ?int;
+
+    public function idTipoVehiculo(string $nombre): ?int;
+
+    public function idFranja(NombreFranja $franja): ?int;
 
     public function existe(int $sedeId, int $tipoVehiculoId, int $franjaId): bool;
 

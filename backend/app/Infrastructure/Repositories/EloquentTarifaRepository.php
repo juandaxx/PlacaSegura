@@ -2,13 +2,16 @@
 
 namespace App\Infrastructure\Repositories;
 
+use App\Domain\Comun\Pagina;
 use App\Domain\Contracts\ConsultaTarifas;
 use App\Domain\Contracts\TarifaRepository;
 use App\Domain\Tarifa\NombreFranja;
 use App\Domain\Tarifa\Tarifa;
 use App\Domain\Tarifa\TarifaRechazada;
 use App\Models\Franja as FranjaModelo;
+use App\Models\Sede as SedeModelo;
 use App\Models\Tarifa as TarifaModelo;
+use App\Models\TipoVehiculo as TipoVehiculoModelo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 
@@ -18,18 +21,34 @@ use Illuminate\Database\UniqueConstraintViolationException;
  */
 final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifas
 {
+    private const RELACIONES = ['franja', 'tipoVehiculo'];
+
     public function buscarPorId(int $id): ?Tarifa
     {
-        $modelo = TarifaModelo::with('franja')->find($id);
+        $modelo = TarifaModelo::with(self::RELACIONES)->find($id);
 
         return $modelo === null ? null : $this->aTarifa($modelo);
     }
 
-    public function nombreFranja(int $franjaId): ?NombreFranja
+    public function idSedeUnica(): ?int
     {
-        $nombre = FranjaModelo::whereKey($franjaId)->value('nombre');
+        $ids = SedeModelo::query()->limit(2)->pluck('id');
 
-        return $nombre === null ? null : NombreFranja::from($nombre);
+        return $ids->count() === 1 ? (int) $ids->first() : null;
+    }
+
+    public function idTipoVehiculo(string $nombre): ?int
+    {
+        $id = TipoVehiculoModelo::where('nombre', $nombre)->value('id');
+
+        return $id === null ? null : (int) $id;
+    }
+
+    public function idFranja(NombreFranja $franja): ?int
+    {
+        $id = FranjaModelo::where('nombre', $franja->value)->orderBy('id')->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 
     public function existe(int $sedeId, int $tipoVehiculoId, int $franjaId): bool
@@ -64,28 +83,32 @@ final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifa
             throw TarifaRechazada::yaExiste();
         }
 
-        return $this->aTarifa($modelo->fresh('franja'));
+        return $this->aTarifa($modelo->fresh(self::RELACIONES));
     }
 
     public function actualizarValor(int $id, string $valor): Tarifa
     {
-        $modelo = TarifaModelo::with('franja')->findOrFail($id);
+        $modelo = TarifaModelo::findOrFail($id);
         $modelo->update(['valor' => $valor]);
 
-        return $this->aTarifa($modelo->fresh('franja'));
+        return $this->aTarifa($modelo->fresh(self::RELACIONES));
     }
 
-    public function listar(?int $sedeId = null, ?int $tipoVehiculoId = null): array
+    public function listar(int $pagina, int $porPagina): Pagina
     {
-        return TarifaModelo::with('franja')
-            ->when($sedeId !== null, fn (Builder $consulta) => $consulta->where('sede_id', $sedeId))
-            ->when($tipoVehiculoId !== null, fn (Builder $consulta) => $consulta->where('tipo_vehiculo_id', $tipoVehiculoId))
+        $resultado = TarifaModelo::with(self::RELACIONES)
             ->orderBy('sede_id')
             ->orderBy('tipo_vehiculo_id')
             ->orderBy('franja_id')
-            ->get()
-            ->map(fn (TarifaModelo $modelo) => $this->aTarifa($modelo))
-            ->all();
+            ->orderBy('id')
+            ->paginate(perPage: $porPagina, page: $pagina);
+
+        return new Pagina(
+            elementos: $resultado->getCollection()->map(fn (TarifaModelo $modelo) => $this->aTarifa($modelo))->all(),
+            total: $resultado->total(),
+            numero: $resultado->currentPage(),
+            porPagina: $resultado->perPage(),
+        );
     }
 
     private function aTarifa(TarifaModelo $modelo): Tarifa
@@ -94,6 +117,7 @@ final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifa
             id: (int) $modelo->id,
             sedeId: (int) $modelo->sede_id,
             tipoVehiculoId: (int) $modelo->tipo_vehiculo_id,
+            tipoVehiculo: $modelo->tipoVehiculo->nombre,
             franjaId: (int) $modelo->franja_id,
             franja: NombreFranja::from($modelo->franja->nombre),
             valor: (string) $modelo->valor,

@@ -24,7 +24,7 @@ final class PoliticaTarifaNocturna
                 : [$valorContrario, $valor];
 
             if (! $this->nocturnaEsValida($diurna, $nocturna)) {
-                throw TarifaRechazada::nocturnaNoMenorQueDiurna($diurna, $nocturna);
+                throw TarifaRechazada::nocturnaNoMenorQueDiurna();
             }
         }
     }
