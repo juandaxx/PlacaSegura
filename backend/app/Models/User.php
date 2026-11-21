@@ -18,10 +18,16 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
+    protected $table = 'usuarios';
+
+    public $timestamps = false;
+
     protected $fillable = [
-        'name',
+        'nombre',
         'email',
         'password',
+        'rol',
+        'activo',
     ];
 
     /**
@@ -42,8 +48,18 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'activo' => 'boolean',
         ];
+    }
+
+    public function eventosAcceso()
+    {
+        return $this->hasMany(EventoAcceso::class, 'usuario_id');
+    }
+
+    public function pagos()
+    {
+        return $this->hasMany(Pago::class, 'usuario_id');
     }
 }
