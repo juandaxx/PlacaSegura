@@ -11,6 +11,7 @@ final class Tarifa
         public readonly ?int $id,
         public readonly int $sedeId,
         public readonly int $tipoVehiculoId,
+        public readonly string $tipoVehiculo,
         public readonly int $franjaId,
         public readonly NombreFranja $franja,
         public readonly string $valor,

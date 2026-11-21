@@ -9,8 +9,7 @@ Route::get('/pagos', [PagoController::class, 'index']);
 Route::get('/pagos/{pago}', [PagoController::class, 'show'])->whereNumber('pago');
 Route::post('/pagos', [PagoController::class, 'store']);
 
-// F-08 Administracion de tarifas
+// F-08 Administracion de tarifas (lectura: ambos roles; escritura: administrador)
 Route::get('/tarifas', [TarifaController::class, 'index']);
-Route::get('/tarifas/{tarifa}', [TarifaController::class, 'show'])->whereNumber('tarifa');
 Route::post('/tarifas', [TarifaController::class, 'store']);
 Route::put('/tarifas/{tarifa}', [TarifaController::class, 'update'])->whereNumber('tarifa');

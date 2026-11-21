@@ -2,11 +2,15 @@
 
 namespace App\Http\Requests;
 
+use App\Domain\Tarifa\NombreFranja;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
  * Datos para crear una tarifa (POST /api/tarifas).
+ *
+ * El tipo de vehiculo y la franja se envian por nombre ("carro", "nocturna").
+ * sede_id es opcional mientras exista una sola sede.
  */
 class CrearTarifaRequest extends FormRequest
 {
@@ -21,9 +25,9 @@ class CrearTarifaRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'sede_id' => ['required', 'integer', Rule::exists('sedes', 'id')],
-            'tipo_vehiculo_id' => ['required', 'integer', Rule::exists('tipos_vehiculo', 'id')],
-            'franja_id' => ['required', 'integer', Rule::exists('franjas', 'id')],
+            'sede_id' => ['nullable', 'integer', Rule::exists('sedes', 'id')],
+            'tipo_vehiculo' => ['required', 'string', Rule::exists('tipos_vehiculo', 'nombre')],
+            'franja' => ['required', Rule::enum(NombreFranja::class)],
             'valor' => self::REGLAS_VALOR,
         ];
     }

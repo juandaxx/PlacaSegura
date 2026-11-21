@@ -5,14 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Application\UseCases\ActualizarValorTarifa;
 use App\Application\UseCases\CrearTarifa;
 use App\Domain\Contracts\ConsultaTarifas;
+use App\Domain\Tarifa\NombreFranja;
 use App\Domain\Tarifa\TarifaRechazada;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ActualizarTarifaRequest;
 use App\Http\Requests\CrearTarifaRequest;
+use App\Http\Requests\ListadoRequest;
 use App\Http\Resources\TarifaResource;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Endpoints de administracion de tarifas (F-08). Solo traduce HTTP: las
@@ -23,39 +25,25 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 class TarifaController extends Controller
 {
     /**
-     * GET /api/tarifas?sede_id=&tipo_vehiculo_id=
+     * GET /api/tarifas?page=&per_page= (operador y administrador)
      */
-    public function index(Request $request, ConsultaTarifas $tarifas): AnonymousResourceCollection
+    public function index(ListadoRequest $request, ConsultaTarifas $tarifas): AnonymousResourceCollection
     {
-        $filtros = $request->validate([
-            'sede_id' => ['nullable', 'integer'],
-            'tipo_vehiculo_id' => ['nullable', 'integer'],
-        ]);
+        $pagina = $tarifas->listar($request->pagina(), $request->porPagina());
 
-        return TarifaResource::collection($tarifas->listar(
-            sedeId: isset($filtros['sede_id']) ? (int) $filtros['sede_id'] : null,
-            tipoVehiculoId: isset($filtros['tipo_vehiculo_id']) ? (int) $filtros['tipo_vehiculo_id'] : null,
-        ));
+        return TarifaResource::collection($request->paginador($pagina));
     }
 
     /**
-     * GET /api/tarifas/{id}
-     */
-    public function show(int $tarifa, ConsultaTarifas $tarifas): TarifaResource
-    {
-        return new TarifaResource($tarifas->buscarPorId($tarifa) ?? abort(404, 'Tarifa no encontrada.'));
-    }
-
-    /**
-     * POST /api/tarifas
+     * POST /api/tarifas (administrador)
      */
     public function store(CrearTarifaRequest $request, CrearTarifa $crearTarifa): JsonResponse
     {
         try {
             $tarifa = $crearTarifa->ejecutar(
-                sedeId: $request->integer('sede_id'),
-                tipoVehiculoId: $request->integer('tipo_vehiculo_id'),
-                franjaId: $request->integer('franja_id'),
+                sedeId: $request->filled('sede_id') ? $request->integer('sede_id') : null,
+                tipoVehiculo: $request->string('tipo_vehiculo')->value(),
+                franja: $request->enum('franja', NombreFranja::class),
                 valor: (string) $request->input('valor'),
             );
         } catch (TarifaRechazada $rechazo) {
@@ -66,7 +54,7 @@ class TarifaController extends Controller
     }
 
     /**
-     * PUT /api/tarifas/{id}
+     * PUT /api/tarifas/{id} (administrador)
      */
     public function update(int $tarifa, ActualizarTarifaRequest $request, ActualizarValorTarifa $actualizarValor): JsonResponse
     {
@@ -79,14 +67,26 @@ class TarifaController extends Controller
         return (new TarifaResource($actualizada))->response();
     }
 
+    /**
+     * Las reglas ligadas a un campo (como RN-02 sobre "valor") se responden
+     * como error de validacion: 422 con "message" y "errors".
+     */
     private function respuestaRechazo(TarifaRechazada $rechazo): JsonResponse
     {
-        $estado = match ($rechazo->motivo) {
-            TarifaRechazada::NO_ENCONTRADA => 404,
-            TarifaRechazada::YA_EXISTE => 409,
-            default => 422,
+        $campo = match ($rechazo->motivo) {
+            TarifaRechazada::NOCTURNA_NO_MENOR_QUE_DIURNA => 'valor',
+            TarifaRechazada::SEDE_REQUERIDA => 'sede_id',
+            TarifaRechazada::TIPO_VEHICULO_NO_ENCONTRADO => 'tipo_vehiculo',
+            TarifaRechazada::FRANJA_NO_ENCONTRADA => 'franja',
+            default => null,
         };
 
-        return response()->json(['message' => $rechazo->getMessage(), 'motivo' => $rechazo->motivo], $estado);
+        if ($campo !== null) {
+            throw ValidationException::withMessages([$campo => $rechazo->getMessage()]);
+        }
+
+        $estado = $rechazo->motivo === TarifaRechazada::NO_ENCONTRADA ? 404 : 409;
+
+        return response()->json(['message' => $rechazo->getMessage()], $estado);
     }
 }

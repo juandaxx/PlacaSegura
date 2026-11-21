@@ -15,6 +15,10 @@ final class TarifaRechazada extends DomainException
 
     public const NO_ENCONTRADA = 'tarifa_no_encontrada';
 
+    public const SEDE_REQUERIDA = 'sede_requerida';
+
+    public const TIPO_VEHICULO_NO_ENCONTRADO = 'tipo_vehiculo_no_encontrado';
+
     public const FRANJA_NO_ENCONTRADA = 'franja_no_encontrada';
 
     private function __construct(public readonly string $motivo, string $mensaje)
@@ -22,19 +26,16 @@ final class TarifaRechazada extends DomainException
         parent::__construct($mensaje);
     }
 
-    public static function nocturnaNoMenorQueDiurna(string $diurna, string $nocturna): self
+    public static function nocturnaNoMenorQueDiurna(): self
     {
-        return new self(
-            self::NOCTURNA_NO_MENOR_QUE_DIURNA,
-            "La tarifa nocturna ({$nocturna}) debe ser menor que la diurna ({$diurna}) (RN-02).",
-        );
+        return new self(self::NOCTURNA_NO_MENOR_QUE_DIURNA, 'La tarifa nocturna debe ser menor que la diurna.');
     }
 
     public static function yaExiste(): self
     {
         return new self(
             self::YA_EXISTE,
-            'Ya existe una tarifa para esa sede, tipo de vehiculo y franja; actualice su valor.',
+            'Ya existe una tarifa para ese tipo de vehículo y franja; modifíquela con PUT /api/tarifas/{id}.',
         );
     }
 
@@ -43,8 +44,18 @@ final class TarifaRechazada extends DomainException
         return new self(self::NO_ENCONTRADA, "La tarifa {$tarifaId} no existe.");
     }
 
-    public static function franjaNoEncontrada(int $franjaId): self
+    public static function sedeRequerida(): self
     {
-        return new self(self::FRANJA_NO_ENCONTRADA, "La franja {$franjaId} no existe.");
+        return new self(self::SEDE_REQUERIDA, 'Indique sede_id: no hay una única sede configurada.');
+    }
+
+    public static function tipoVehiculoNoEncontrado(string $tipoVehiculo): self
+    {
+        return new self(self::TIPO_VEHICULO_NO_ENCONTRADO, "El tipo de vehículo {$tipoVehiculo} no existe.");
+    }
+
+    public static function franjaNoEncontrada(NombreFranja $franja): self
+    {
+        return new self(self::FRANJA_NO_ENCONTRADA, "No hay una franja {$franja->value} configurada.");
     }
 }
