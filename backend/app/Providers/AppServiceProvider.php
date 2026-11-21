@@ -3,12 +3,15 @@
 namespace App\Providers;
 
 use App\Domain\Contracts\ConsultaPagos;
+use App\Domain\Contracts\ConsultaTarifas;
 use App\Domain\Contracts\GestorTransacciones;
 use App\Domain\Contracts\PagoRepository;
 use App\Domain\Contracts\Reloj;
+use App\Domain\Contracts\TarifaRepository;
 use App\Infrastructure\Persistencia\DbGestorTransacciones;
 use App\Infrastructure\Reloj\RelojSistema;
 use App\Infrastructure\Repositories\DbPagoRepository;
+use App\Infrastructure\Repositories\EloquentTarifaRepository;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,6 +26,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(GestorTransacciones::class, DbGestorTransacciones::class);
         $this->app->bind(PagoRepository::class, DbPagoRepository::class);
         $this->app->bind(ConsultaPagos::class, DbPagoRepository::class);
+        $this->app->bind(TarifaRepository::class, EloquentTarifaRepository::class);
+        $this->app->bind(ConsultaTarifas::class, EloquentTarifaRepository::class);
     }
 
     /**
