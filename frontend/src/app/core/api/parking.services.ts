@@ -1,0 +1,64 @@
+import { InjectionToken, Provider, inject } from '@angular/core';
+import { Observable, of } from 'rxjs';
+import { Cobro, Cupo, EventoCarril, Usuario } from '../models/parking.models';
+
+export interface AuthService { currentUser(): Observable<Usuario | null>; }
+export interface LaneService { latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril>; }
+export interface ParkingCapacityService { getCapacity(): Observable<Cupo[]>; }
+export interface PaymentService { pendingCharge(plate: string): Observable<Cobro | null>; }
+
+export const AUTH_SERVICE = new InjectionToken<AuthService>('AUTH_SERVICE');
+export const LANE_SERVICE = new InjectionToken<LaneService>('LANE_SERVICE');
+export const PARKING_CAPACITY_SERVICE = new InjectionToken<ParkingCapacityService>('PARKING_CAPACITY_SERVICE');
+export const PAYMENT_SERVICE = new InjectionToken<PaymentService>('PAYMENT_SERVICE');
+
+export class MockAuthService implements AuthService {
+  currentUser(): Observable<Usuario> { return of({ id: 'demo-1', nombre: 'Operador', rol: 'operador' }); }
+}
+export class HttpAuthService implements AuthService {
+  currentUser(): Observable<Usuario | null> { // TODO: consultar la sesión en Laravel.
+    return of(null);
+  }
+}
+export class MockLaneService implements LaneService {
+  latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril> {
+    return of({ id: 'demo-event-1', tipo: lane, fecha: '2026-11-20T08:30:00-05:00', placa: 'ABC123' });
+  }
+}
+export class HttpLaneService implements LaneService {
+  latestEvent(_lane: 'entrada' | 'salida'): Observable<EventoCarril> { // TODO: conectar con el endpoint de carriles.
+    return of({ id: '', tipo: 'entrada', fecha: '', placa: '' });
+  }
+}
+export class MockParkingCapacityService implements ParkingCapacityService {
+  getCapacity(): Observable<Cupo[]> { return of([{ tipo: 'carro', disponibles: 12, total: 40 }, { tipo: 'moto', disponibles: 8, total: 24 }]); }
+}
+export class HttpParkingCapacityService implements ParkingCapacityService {
+  getCapacity(): Observable<Cupo[]> { // TODO: conectar con el endpoint de cupos.
+    return of([]);
+  }
+}
+export class MockPaymentService implements PaymentService {
+  pendingCharge(plate: string): Observable<Cobro> { return of({ id: 'demo-charge-1', placa: plate, estado: 'pendiente', tarifaAplicada: 'diurna', valor: 5000 }); }
+}
+export class HttpPaymentService implements PaymentService {
+  pendingCharge(_plate: string): Observable<Cobro | null> { // TODO: conectar con el endpoint de cobros.
+    return of(null);
+  }
+}
+
+export const MOCK_BACKEND_PROVIDERS: Provider[] = [
+  { provide: AUTH_SERVICE, useClass: MockAuthService },
+  { provide: LANE_SERVICE, useClass: MockLaneService },
+  { provide: PARKING_CAPACITY_SERVICE, useClass: MockParkingCapacityService },
+  { provide: PAYMENT_SERVICE, useClass: MockPaymentService },
+];
+// Para conectar Laravel, sustituir cada useClass por su adaptador Http correspondiente.
+export const HTTP_BACKEND_PROVIDERS: Provider[] = [
+  { provide: AUTH_SERVICE, useClass: HttpAuthService },
+  { provide: LANE_SERVICE, useClass: HttpLaneService },
+  { provide: PARKING_CAPACITY_SERVICE, useClass: HttpParkingCapacityService },
+  { provide: PAYMENT_SERVICE, useClass: HttpPaymentService },
+];
+
+export function injectAuthService(): AuthService { return inject(AUTH_SERVICE); }
