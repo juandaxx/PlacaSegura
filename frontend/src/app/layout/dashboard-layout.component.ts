@@ -1,10 +1,11 @@
 import { Component, signal } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 import { SidebarComponent } from '../shared/components/sidebar.component';
 import { TopbarComponent } from '../shared/components/topbar.component';
 
 @Component({
   selector: 'app-dashboard-layout',
-  imports: [SidebarComponent, TopbarComponent],
+  imports: [SidebarComponent, TopbarComponent, RouterOutlet],
   template: `
     <div class="min-h-dvh lg:flex">
       <app-sidebar [open]="menuOpen()" (closeMenu)="menuOpen.set(false)" />
@@ -15,6 +16,7 @@ import { TopbarComponent } from '../shared/components/topbar.component';
             <p class="font-heading text-xl font-semibold text-ink">Placa Segura S.A.S.</p>
             <p class="mt-2 text-sm leading-6 text-muted">La estructura de navegación está lista. Las pantallas se incorporarán en las siguientes etapas.</p>
           </section>
+          <router-outlet />
         </main>
       </div>
     </div>

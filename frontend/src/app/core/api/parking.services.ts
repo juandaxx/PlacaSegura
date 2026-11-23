@@ -1,8 +1,12 @@
-import { InjectionToken, Provider, inject } from '@angular/core';
-import { Observable, of } from 'rxjs';
+import { InjectionToken, Provider } from '@angular/core';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import { Cobro, Cupo, EventoCarril, Usuario } from '../models/parking.models';
 
-export interface AuthService { currentUser(): Observable<Usuario | null>; }
+export interface AuthCredentials { readonly username: string; readonly password: string; }
+export interface AuthService {
+  currentUser(): Observable<Usuario | null>;
+  signIn(credentials: AuthCredentials): Observable<Usuario | null>;
+}
 export interface LaneService { latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril>; }
 export interface ParkingCapacityService { getCapacity(): Observable<Cupo[]>; }
 export interface PaymentService { pendingCharge(plate: string): Observable<Cobro | null>; }
@@ -13,10 +17,20 @@ export const PARKING_CAPACITY_SERVICE = new InjectionToken<ParkingCapacityServic
 export const PAYMENT_SERVICE = new InjectionToken<PaymentService>('PAYMENT_SERVICE');
 
 export class MockAuthService implements AuthService {
-  currentUser(): Observable<Usuario> { return of({ id: 'demo-1', nombre: 'Operador', rol: 'operador' }); }
+  private readonly user = new BehaviorSubject<Usuario | null>(null);
+
+  currentUser(): Observable<Usuario | null> { return this.user.asObservable(); }
+  signIn(credentials: AuthCredentials): Observable<Usuario> {
+    const user: Usuario = { id: 'demo-1', nombre: credentials.username, rol: 'operador' };
+    this.user.next(user);
+    return of(user);
+  }
 }
 export class HttpAuthService implements AuthService {
   currentUser(): Observable<Usuario | null> { // TODO: consultar la sesión en Laravel.
+    return of(null);
+  }
+  signIn(_credentials: AuthCredentials): Observable<Usuario | null> { // TODO: enviar credenciales a Laravel.
     return of(null);
   }
 }
@@ -61,4 +75,3 @@ export const HTTP_BACKEND_PROVIDERS: Provider[] = [
   { provide: PAYMENT_SERVICE, useClass: HttpPaymentService },
 ];
 
-export function injectAuthService(): AuthService { return inject(AUTH_SERVICE); }
