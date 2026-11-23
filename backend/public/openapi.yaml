@@ -1,0 +1,1145 @@
+openapi: 3.0.3
+
+info:
+  title: PlacaSegura API
+  version: 1.0.0
+  description: |
+    API del sistema de parqueadero con lectura de placas (LPR). La consume la aplicación Angular.
+
+    ## Convenciones
+    - Todas las rutas empiezan por `/api`. Las peticiones y respuestas van en JSON.
+    - Las fechas con hora van en ISO 8601 con el desfase de Colombia (`2026-11-21T05:59:59-05:00`);
+      los días operativos, en `AAAA-MM-DD`.
+    - El día operativo va de las 06:00 a las 05:59 del día siguiente.
+    - Las placas se guardan en mayúsculas, sin espacios ni guiones: `abc-123` se trata como `ABC123`.
+    - Los listados se paginan con `page` y `per_page` (15 por defecto, máximo 100) y responden `data`, `links` y `meta`.
+    - Los montos son números (`5000`).
+
+    ## Autenticación
+    El inicio de sesión (F-10) todavía no está integrado, así que por ahora las rutas no piden token.
+    Mientras tanto, las operaciones que registran al operador (pago y validación manual de placa)
+    reciben `usuario_id` en la petición. Cada ruta indica el rol que la usará.
+
+    ## Códigos de respuesta
+    | Código | Cuándo se usa |
+    |---|---|
+    | 200 | La operación se hizo bien. |
+    | 201 | Se creó un recurso nuevo. |
+    | 404 | El recurso no existe. |
+    | 409 | Conflicto con el estado actual; por ejemplo, pagar un cobro anulado. |
+    | 422 | Los datos no pasan la validación; la respuesta trae `message` y `errors`. |
+
+servers:
+  - url: /api
+    description: Este mismo servidor
+
+tags:
+  - name: Carril
+    description: Ingreso y salida de vehículos por placa (F-01, F-02, F-03, F-05, F-06, F-07).
+  - name: Cobros
+    description: Consulta y anulación de cobros (F-03, F-09).
+  - name: Pagos
+    description: Registro del pago en efectivo (F-04).
+  - name: Tarifas
+    description: Administración de tarifas por tipo de vehículo y franja (F-08).
+  - name: Dashboard
+    description: Indicadores del tablero. Acceso abierto mientras se integra la autenticación.
+
+paths:
+  /accesos/ingreso:
+    post:
+      tags: [Carril]
+      operationId: registrarIngreso
+      summary: Registrar el ingreso de un vehículo
+      description: |
+        **Rol:** operador.
+
+        Clasifica el vehículo por el formato de la placa y revisa, en este orden, la confianza de la
+        lectura, el cupo y el pase vigente. Si la barrera abre, usa el cobro del día operativo o genera
+        uno con la tarifa de la franja de la hora de ingreso: hay un solo cobro por placa, sede y día
+        operativo. Cada lectura queda registrada como evento, abra o no la barrera.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LecturaPlaca'
+            example:
+              placa: ABC123
+              confianza: 0.93
+              sede_id: 1
+              carril_id: 1
+      responses:
+        '200':
+          description: Decisión del carril. Revise `barrera` y `motivo`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoAcceso'
+              examples:
+                ingresa:
+                  summary: Entra y queda con cobro pendiente
+                  value:
+                    evento_id: 120
+                    barrera: abierta
+                    motivo: OK
+                    placa: ABC123
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: { id: 41, valor: 5000, estado: pendiente }
+                paseVigente:
+                  summary: Ya pagó hoy y entra sin cobro nuevo
+                  value:
+                    evento_id: 125
+                    barrera: abierta
+                    motivo: PASE_VIGENTE
+                    placa: ABC123
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: { id: 41, valor: 5000, estado: pagado }
+                lecturaManual:
+                  summary: Confianza baja; el operador debe validar la placa
+                  value:
+                    evento_id: 121
+                    barrera: cerrada
+                    motivo: LECTURA_MANUAL
+                    placa: ABC128
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: null
+                sinCupo:
+                  summary: No hay cupo para el tipo de vehículo (la pantalla muestra LLENO)
+                  value:
+                    evento_id: 122
+                    barrera: cerrada
+                    motivo: SIN_CUPO
+                    placa: DEF456
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: null
+        '409':
+          description: Falta configurar la franja o la tarifa para calcular el cobro. No se registra nada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: No hay tarifa configurada para carro en la franja diurna.
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /accesos/salida:
+    post:
+      tags: [Carril]
+      operationId: registrarSalida
+      summary: Registrar la salida de un vehículo
+      description: |
+        **Rol:** operador.
+
+        La barrera abre solo si el cobro está pagado o no queda nada por pagar. Se revisa el último
+        cobro de la placa en la sede, no solo el del día, para que un vehículo que entró de noche no
+        salga sin pagar después de las 06:00. Un cobro en $0 (moto) no bloquea la salida.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LecturaPlaca'
+            example:
+              placa: ABC123
+              confianza: 0.95
+              sede_id: 1
+              carril_id: 2
+      responses:
+        '200':
+          description: Decisión del carril. Revise `barrera` y `motivo`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoAcceso'
+              examples:
+                cobroPendiente:
+                  summary: Intenta salir sin pagar
+                  value:
+                    evento_id: 130
+                    barrera: cerrada
+                    motivo: COBRO_PENDIENTE
+                    placa: ABC123
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: { id: 41, valor: 5000, estado: pendiente }
+                pagado:
+                  summary: Pagó el cobro del día
+                  value:
+                    evento_id: 131
+                    barrera: abierta
+                    motivo: PASE_VIGENTE
+                    placa: ABC123
+                    tipo_vehiculo: carro
+                    lectura_manual: false
+                    cobro: { id: 41, valor: 5000, estado: pagado }
+                motoSinCobro:
+                  summary: Moto con tarifa en $0
+                  value:
+                    evento_id: 132
+                    barrera: abierta
+                    motivo: OK
+                    placa: XYZ12A
+                    tipo_vehiculo: moto
+                    lectura_manual: false
+                    cobro: { id: 42, valor: 0, estado: pendiente }
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /eventos/{id}/placa:
+    patch:
+      tags: [Carril]
+      operationId: validarPlaca
+      summary: Confirmar o corregir la placa de una lectura con confianza baja
+      description: |
+        **Rol:** operador.
+
+        Solo para eventos que quedaron en `LECTURA_MANUAL`. Guarda la placa confirmada o corregida,
+        marca el evento como lectura manual con el operador que lo validó y repite el flujo de ingreso
+        o de salida con esa placa, sin volver a revisar la confianza.
+      parameters:
+        - $ref: '#/components/parameters/IdEvento'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidarPlaca'
+            example:
+              placa: ABC123
+              usuario_id: 2
+      responses:
+        '200':
+          description: El evento validado y la nueva decisión del carril.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoAcceso'
+              example:
+                evento_id: 121
+                barrera: abierta
+                motivo: OK
+                placa: ABC123
+                tipo_vehiculo: carro
+                lectura_manual: true
+                cobro: { id: 43, valor: 5000, estado: pendiente }
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: El evento no está pendiente de validación manual, o falta configurar la tarifa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El evento 120 no está pendiente de validación manual.
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /cobros:
+    get:
+      tags: [Cobros]
+      operationId: listarCobros
+      summary: Listar cobros
+      description: |
+        **Rol:** operador y administrador.
+
+        Cobros del día operativo más reciente al más antiguo, con filtros opcionales.
+      parameters:
+        - name: placa
+          in: query
+          description: Coincidencia exacta. Se normaliza a mayúsculas, sin espacios ni guiones.
+          schema:
+            type: string
+            maxLength: 10
+            example: ABC123
+        - name: fecha
+          in: query
+          description: Día operativo del cobro.
+          schema:
+            type: string
+            format: date
+            example: '2026-11-20'
+        - name: estado
+          in: query
+          schema:
+            $ref: '#/components/schemas/EstadoCobro'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Página de cobros.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaCobros'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /cobros/{id}:
+    get:
+      tags: [Cobros]
+      operationId: verCobro
+      summary: Ver el detalle de un cobro
+      description: |
+        **Rol:** operador y administrador.
+
+        Incluye la tarifa con la que se calculó. `valor` es lo que se cobró, aunque la tarifa haya
+        cambiado después (RN-07).
+      parameters:
+        - $ref: '#/components/parameters/IdCobro'
+      responses:
+        '200':
+          description: El cobro.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaCobro'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /cobros/{id}/anular:
+    patch:
+      tags: [Cobros]
+      operationId: anularCobro
+      summary: Anular un cobro pendiente
+      description: |
+        **Rol:** administrador.
+
+        Solo se anula un cobro pendiente. Anular un cobro que ya está anulado lo devuelve sin cambios.
+      parameters:
+        - $ref: '#/components/parameters/IdCobro'
+      responses:
+        '200':
+          description: El cobro anulado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaCobro'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: El cobro ya está pagado o vencido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El cobro 41 está pagado; solo se puede anular un cobro pendiente.
+
+  /cobros/{id}/pagos:
+    post:
+      tags: [Pagos]
+      operationId: registrarPago
+      summary: Registrar el pago en efectivo de un cobro
+      description: |
+        **Rol:** operador.
+
+        El pago es idempotente: si llega otra vez la misma `referencia` para el mismo cobro, no se crea
+        otro pago y se devuelve el ya registrado con código 200. Deja un pase vigente hasta el fin del
+        día operativo del cobro (05:59:59 del día siguiente).
+      parameters:
+        - $ref: '#/components/parameters/IdCobro'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrarPago'
+            example:
+              medio: efectivo
+              referencia: CAJA1-20261120-0007
+              usuario_id: 2
+      responses:
+        '201':
+          description: Pago registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagoRegistrado'
+        '200':
+          description: La referencia ya estaba registrada para ese cobro; se devuelve el mismo pago.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagoRegistrado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: |
+            El cobro está anulado o ya pagado, la referencia ya se usó en otro cobro, o el cobro no tiene
+            valor a pagar.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El cobro 41 está anulado; solo se puede pagar un cobro pendiente.
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /tarifas:
+    get:
+      tags: [Tarifas]
+      operationId: listarTarifas
+      summary: Listar tarifas
+      description: |
+        **Rol:** operador y administrador.
+
+        Tarifas ordenadas por sede, tipo de vehículo y franja.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Página de tarifas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaTarifas'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+    post:
+      tags: [Tarifas]
+      operationId: crearTarifa
+      summary: Crear una tarifa
+      description: |
+        **Rol:** administrador.
+
+        El tipo de vehículo y la franja se envían por nombre. Rechaza una tarifa nocturna mayor o igual
+        a la diurna del mismo tipo de vehículo (RN-02), salvo que ambas estén en $0.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearTarifa'
+            example:
+              tipo_vehiculo: carro
+              franja: nocturna
+              valor: 3000
+      responses:
+        '201':
+          description: Tarifa creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaTarifa'
+        '409':
+          description: Ya existe una tarifa para esa sede, tipo de vehículo y franja.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Ya existe una tarifa para ese tipo de vehículo y franja; modifíquela con PUT /api/tarifas/{id}.
+        '422':
+          $ref: '#/components/responses/ErrorTarifa'
+
+  /tarifas/{id}:
+    put:
+      tags: [Tarifas]
+      operationId: modificarTarifa
+      summary: Modificar el valor de una tarifa
+      description: |
+        **Rol:** administrador.
+
+        Solo cambia el valor; la sede, el tipo de vehículo y la franja no cambian. Respeta RN-02 y no
+        modifica los cobros ya generados.
+      parameters:
+        - $ref: '#/components/parameters/IdTarifa'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarTarifa'
+            example:
+              valor: 5500
+      responses:
+        '200':
+          description: Tarifa con el valor nuevo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaTarifa'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          $ref: '#/components/responses/ErrorTarifa'
+
+  /dashboard/sedes:
+    get:
+      tags: [Dashboard]
+      operationId: sedesDashboard
+      summary: Listar las sedes y el día operativo actual
+      responses:
+        '200':
+          description: Sedes disponibles para el tablero.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SedesDashboard'
+
+  /dashboard/resumen:
+    get:
+      tags: [Dashboard]
+      operationId: resumenDashboard
+      summary: Resumen de una sede en un periodo
+      description: |
+        Ocupación actual por tipo de vehículo, movimientos, cobros pendientes y vencidos, y lecturas
+        manuales del periodo. El periodo es de máximo 31 días operativos; si no se envían `desde` y
+        `hasta`, se usa el día operativo actual.
+      parameters:
+        - $ref: '#/components/parameters/SedeObligatoria'
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Resumen de la sede.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumenDashboard'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /dashboard/actividad:
+    get:
+      tags: [Dashboard]
+      operationId: actividadDashboard
+      summary: Últimos eventos del carril en una sede
+      description: Eventos de la sede, del más reciente al más antiguo.
+      parameters:
+        - $ref: '#/components/parameters/SedeObligatoria'
+        - name: limite
+          in: query
+          description: Cantidad de eventos.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Lista de eventos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActividadReciente'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /dashboard/comparativo-sedes:
+    get:
+      tags: [Dashboard]
+      operationId: comparativoDashboard
+      summary: Comparar ocupación y recaudo entre sedes
+      description: |
+        Periodo de máximo 31 días operativos; si no se envían `desde` y `hasta`, se usa el día
+        operativo actual.
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Una fila por sede.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComparativoSede'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+components:
+  parameters:
+    IdEvento:
+      name: id
+      in: path
+      required: true
+      description: Id del evento.
+      schema:
+        type: integer
+        example: 121
+    IdCobro:
+      name: id
+      in: path
+      required: true
+      description: Id del cobro.
+      schema:
+        type: integer
+        example: 41
+    IdTarifa:
+      name: id
+      in: path
+      required: true
+      description: Id de la tarifa.
+      schema:
+        type: integer
+        example: 3
+    Pagina:
+      name: page
+      in: query
+      description: Número de página.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PorPagina:
+      name: per_page
+      in: query
+      description: Elementos por página.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 15
+    SedeObligatoria:
+      name: sede_id
+      in: query
+      required: true
+      description: Id de la sede.
+      schema:
+        type: integer
+        example: 1
+    Desde:
+      name: desde
+      in: query
+      description: Primer día operativo del periodo. Por defecto, el día operativo actual.
+      schema:
+        type: string
+        format: date
+        example: '2026-11-20'
+    Hasta:
+      name: hasta
+      in: query
+      description: Último día operativo del periodo, igual o posterior a `desde`.
+      schema:
+        type: string
+        format: date
+        example: '2026-11-20'
+
+  responses:
+    NoEncontrado:
+      description: El recurso no existe.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: El cobro 9999 no existe.
+    ErrorValidacion:
+      description: Los datos no pasan la validación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorValidacion'
+          example:
+            message: The placa field is required.
+            errors:
+              placa: [The placa field is required.]
+    ErrorTarifa:
+      description: Los datos no pasan la validación o la tarifa nocturna no es menor que la diurna (RN-02).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorValidacion'
+          example:
+            message: La tarifa nocturna debe ser menor que la diurna.
+            errors:
+              valor: [La tarifa nocturna debe ser menor que la diurna.]
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+
+    ErrorValidacion:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Primer error encontrado.
+        errors:
+          type: object
+          description: Mensajes por cada campo con error.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    LecturaPlaca:
+      type: object
+      required: [placa, confianza, sede_id, carril_id]
+      properties:
+        placa:
+          type: string
+          maxLength: 10
+          description: |
+            Formato colombiano: carro con tres letras y tres números (ABC123); moto con tres letras,
+            dos números y una letra (ABC12D). Si no corresponde a ningún tipo de vehículo, responde 422.
+          example: ABC123
+        confianza:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            Confianza de la lectura. Si está por debajo del umbral configurado (`umbral_confianza` en la
+            tabla configuracion; 0.80 por defecto), la lectura pasa a validación manual.
+          example: 0.93
+        sede_id:
+          type: integer
+          example: 1
+        carril_id:
+          type: integer
+          description: Carril de la sede; de entrada en el ingreso y de salida en la salida.
+          example: 1
+
+    ValidarPlaca:
+      type: object
+      required: [placa]
+      properties:
+        placa:
+          type: string
+          maxLength: 10
+          description: Placa confirmada o corregida por el operador.
+          example: ABC123
+        usuario_id:
+          type: integer
+          description: Operador que valida. Temporal; obligatorio mientras no exista el inicio de sesión.
+          example: 2
+
+    ResultadoAcceso:
+      type: object
+      properties:
+        evento_id:
+          type: integer
+          example: 120
+        barrera:
+          type: string
+          enum: [abierta, cerrada]
+        motivo:
+          type: string
+          enum: [OK, PASE_VIGENTE, LECTURA_MANUAL, SIN_CUPO, COBRO_PENDIENTE]
+          description: |
+            - `OK`: todas las validaciones pasaron (abierta).
+            - `PASE_VIGENTE`: el cobro del día ya está pagado (abierta).
+            - `LECTURA_MANUAL`: la confianza es baja y el operador debe validar la placa (cerrada).
+            - `SIN_CUPO`: no hay cupo para ese tipo de vehículo; la pantalla muestra "LLENO" (cerrada).
+            - `COBRO_PENDIENTE`: el vehículo intenta salir sin haber pagado (cerrada).
+        placa:
+          type: string
+          example: ABC123
+        tipo_vehiculo:
+          type: string
+          example: carro
+        lectura_manual:
+          type: boolean
+          description: true si el operador validó la placa.
+        cobro:
+          nullable: true
+          description: Cobro relacionado; null si la barrera no abre en el ingreso o no hay cobro.
+          allOf:
+            - $ref: '#/components/schemas/CobroResumen'
+
+    CobroResumen:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 41
+        valor:
+          type: number
+          example: 5000
+        estado:
+          $ref: '#/components/schemas/EstadoCobro'
+
+    EstadoCobro:
+      type: string
+      enum: [pendiente, pagado, vencido, anulado]
+
+    Franja:
+      type: string
+      enum: [diurna, nocturna]
+
+    Cobro:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 41
+        sede_id:
+          type: integer
+          example: 1
+        placa:
+          type: string
+          example: ABC123
+        dia_operativo:
+          type: string
+          format: date
+          example: '2026-11-20'
+        valor:
+          type: number
+          description: Lo que se cobró (RN-07).
+          example: 5000
+        estado:
+          $ref: '#/components/schemas/EstadoCobro'
+        evento_ingreso_id:
+          type: integer
+          example: 120
+        tarifa:
+          type: object
+          description: Tarifa con la que se calculó el cobro.
+          properties:
+            id:
+              type: integer
+              example: 3
+            tipo_vehiculo:
+              type: string
+              example: carro
+            franja:
+              $ref: '#/components/schemas/Franja'
+
+    RespuestaCobro:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Cobro'
+
+    ListaCobros:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cobro'
+        links:
+          $ref: '#/components/schemas/EnlacesPaginacion'
+        meta:
+          $ref: '#/components/schemas/MetaPaginacion'
+
+    RegistrarPago:
+      type: object
+      required: [medio, referencia]
+      properties:
+        medio:
+          type: string
+          enum: [efectivo]
+        referencia:
+          type: string
+          maxLength: 100
+          description: |
+            Identifica el intento de pago. La caja la genera una vez y la reenvía igual si repite la
+            solicitud.
+          example: CAJA1-20261120-0007
+        usuario_id:
+          type: integer
+          description: Operador que recibe el pago. Temporal; obligatorio mientras no exista el inicio de sesión.
+          example: 2
+
+    PagoRegistrado:
+      type: object
+      properties:
+        pago_id:
+          type: integer
+          example: 15
+        cobro_id:
+          type: integer
+          example: 41
+        estado_cobro:
+          $ref: '#/components/schemas/EstadoCobro'
+        pase_vigente_hasta:
+          type: string
+          format: date-time
+          description: Fin del día operativo del cobro.
+          example: '2026-11-21T05:59:59-05:00'
+
+    Tarifa:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+        sede_id:
+          type: integer
+          example: 1
+        tipo_vehiculo:
+          type: string
+          example: carro
+        franja:
+          $ref: '#/components/schemas/Franja'
+        valor:
+          type: number
+          example: 5000
+
+    RespuestaTarifa:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Tarifa'
+
+    ListaTarifas:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tarifa'
+        links:
+          $ref: '#/components/schemas/EnlacesPaginacion'
+        meta:
+          $ref: '#/components/schemas/MetaPaginacion'
+
+    CrearTarifa:
+      type: object
+      required: [tipo_vehiculo, franja, valor]
+      properties:
+        sede_id:
+          type: integer
+          description: Opcional mientras exista una sola sede; obligatorio si hay varias.
+          example: 1
+        tipo_vehiculo:
+          type: string
+          description: Nombre de un tipo de vehículo configurado.
+          example: carro
+        franja:
+          $ref: '#/components/schemas/Franja'
+        valor:
+          type: number
+          minimum: 0
+          maximum: 9999999999.99
+          description: Hasta dos decimales.
+          example: 3000
+
+    ActualizarTarifa:
+      type: object
+      required: [valor]
+      properties:
+        valor:
+          type: number
+          minimum: 0
+          maximum: 9999999999.99
+          description: Hasta dos decimales.
+          example: 5500
+
+    EnlacesPaginacion:
+      type: object
+      properties:
+        first:
+          type: string
+          nullable: true
+        last:
+          type: string
+          nullable: true
+        prev:
+          type: string
+          nullable: true
+        next:
+          type: string
+          nullable: true
+
+    MetaPaginacion:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        from:
+          type: integer
+          nullable: true
+        last_page:
+          type: integer
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                nullable: true
+              label:
+                type: string
+              active:
+                type: boolean
+        path:
+          type: string
+        per_page:
+          type: integer
+        to:
+          type: integer
+          nullable: true
+        total:
+          type: integer
+
+    SedeResumida:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nombre:
+          type: string
+          example: Sede Centro
+
+    GrupoCobros:
+      type: object
+      properties:
+        cantidad:
+          type: integer
+          example: 3
+        valor:
+          type: number
+          example: 15000
+
+    SedesDashboard:
+      type: object
+      properties:
+        sedes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SedeResumida'
+        hoy_operativo:
+          type: string
+          format: date
+          example: '2026-11-20'
+
+    OcupacionPorTipo:
+      type: object
+      properties:
+        tipo:
+          type: string
+          example: carro
+        total:
+          type: integer
+          description: Cupo configurado.
+          example: 50
+        dentro:
+          type: integer
+          example: 32
+        disponibles:
+          type: integer
+          example: 18
+        porcentaje:
+          type: number
+          example: 64
+        sobrecupo:
+          type: boolean
+
+    ResumenDashboard:
+      type: object
+      properties:
+        sede:
+          $ref: '#/components/schemas/SedeResumida'
+        ocupacion:
+          type: array
+          items:
+            $ref: '#/components/schemas/OcupacionPorTipo'
+        movimientos:
+          type: object
+          properties:
+            ingresos:
+              type: integer
+            salidas:
+              type: integer
+        cobros:
+          type: object
+          properties:
+            pendientes:
+              $ref: '#/components/schemas/GrupoCobros'
+            vencidos:
+              $ref: '#/components/schemas/GrupoCobros'
+        lecturas_manuales:
+          type: object
+          properties:
+            cantidad:
+              type: integer
+            recientes_baja_confianza:
+              type: array
+              description: Las 5 lecturas más recientes con confianza por debajo del umbral.
+              items:
+                type: object
+                properties:
+                  placa:
+                    type: string
+                  confianza:
+                    type: number
+                  fecha_hora:
+                    type: string
+                    example: '2026-11-20 08:15:00'
+        recaudo:
+          type: object
+          description: Solo para el administrador. Mientras no exista el inicio de sesión, siempre aparece.
+          properties:
+            total:
+              type: number
+        periodo:
+          type: object
+          properties:
+            desde:
+              type: string
+              format: date
+            hasta:
+              type: string
+              format: date
+        umbral_alerta_capacidad:
+          type: number
+          description: Porcentaje de ocupación a partir del cual se alerta.
+          example: 90
+
+    ActividadReciente:
+      type: object
+      properties:
+        placa:
+          type: string
+          example: ABC123
+        tipo_vehiculo:
+          type: string
+          example: carro
+        tipo:
+          type: string
+          enum: [ingreso, salida]
+        carril:
+          type: string
+          example: Entrada 1
+        fecha_hora:
+          type: string
+          description: Fecha y hora local tal como está guardada.
+          example: '2026-11-20 08:15:00'
+        lectura_manual:
+          type: boolean
+        confianza:
+          type: number
+          nullable: true
+          example: 0.93
+
+    ComparativoSede:
+      type: object
+      properties:
+        sede:
+          $ref: '#/components/schemas/SedeResumida'
+        dentro:
+          type: integer
+          example: 32
+        total:
+          type: integer
+          example: 50
+        porcentaje_ocupacion:
+          type: number
+          example: 64
+        recaudo:
+          type: number
+          example: 120000
+        pendientes:
+          $ref: '#/components/schemas/GrupoCobros'
+        alerta_capacidad:
+          type: boolean
