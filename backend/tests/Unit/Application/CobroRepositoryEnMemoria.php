@@ -17,14 +17,14 @@ final class CobroRepositoryEnMemoria implements CobroRepository
     /** @var array<int, Cobro> */
     public array $cobros = [];
 
-    public function agregar(int $id, EstadoCobro $estado = EstadoCobro::Pendiente): void
+    public function agregar(int $id, EstadoCobro $estado = EstadoCobro::Pendiente, string $valor = '5000.00'): void
     {
         $this->cobros[$id] = new Cobro(
             id: $id,
             sedeId: 1,
             placa: 'ABC123',
             diaOperativo: new DateTimeImmutable('2026-11-20'),
-            valor: '5000.00',
+            valor: $valor,
             estado: $estado,
             eventoIngresoId: 1,
             tarifa: new Tarifa(1, 1, 1, 'carro', 1, NombreFranja::Diurna, '5000.00'),

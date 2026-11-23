@@ -31,7 +31,7 @@ final class PagoRechazado extends DomainException
     {
         return new self(
             self::COBRO_NO_PENDIENTE,
-            "El cobro {$cobroId} esta {$estado->value} y solo se puede pagar un cobro pendiente.",
+            "El cobro {$cobroId} está {$estado->value}; solo se puede pagar un cobro pendiente.",
         );
     }
 
@@ -44,7 +44,7 @@ final class PagoRechazado extends DomainException
     {
         return new self(
             self::REFERENCIA_EN_OTRO_COBRO,
-            "La referencia {$referencia} ya se uso para pagar otro cobro.",
+            "La referencia {$referencia} ya se usó para pagar otro cobro.",
         );
     }
 }

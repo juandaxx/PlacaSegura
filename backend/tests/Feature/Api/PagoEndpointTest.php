@@ -2,13 +2,17 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 class PagoEndpointTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const REFERENCIA = 'CAJA1-20261120-0007';
 
     private int $cobroId;
 
@@ -39,59 +43,86 @@ class PagoEndpointTest extends TestCase
         ]);
     }
 
-    public function test_registra_el_pago_y_marca_el_cobro_como_pagado(): void
+    public function test_registra_el_pago_con_el_formato_del_documento(): void
     {
-        $respuesta = $this->postJson('/api/pagos', $this->datosPago());
+        $respuesta = $this->pagar()->assertCreated();
 
-        $respuesta->assertCreated()
-            ->assertJsonPath('data.cobro_id', $this->cobroId)
-            ->assertJsonPath('data.valor', '5000.00')
-            ->assertJsonPath('data.referencia', 'CAJA1-0001');
-        $this->assertStringStartsWith('2026-11-21T05:59:59', $respuesta->json('data.pase_hasta'));
+        $respuesta->assertExactJson([
+            'pago_id' => (int) DB::table('pagos')->value('id'),
+            'cobro_id' => $this->cobroId,
+            'estado_cobro' => 'pagado',
+            'pase_vigente_hasta' => '2026-11-21T05:59:59-05:00',
+        ]);
         $this->assertDatabaseHas('cobros', ['id' => $this->cobroId, 'estado' => 'pagado']);
+        $this->assertDatabaseHas('pagos', [
+            'cobro_id' => $this->cobroId,
+            'usuario_id' => $this->operadorId,
+            'medio' => 'efectivo',
+            'referencia' => self::REFERENCIA,
+        ]);
     }
 
-    public function test_repetir_la_misma_referencia_devuelve_el_mismo_pago_sin_duplicarlo(): void
+    public function test_la_misma_referencia_devuelve_el_pago_ya_registrado_con_200(): void
     {
-        $primero = $this->postJson('/api/pagos', $this->datosPago())->assertCreated();
+        $primero = $this->pagar()->assertCreated();
 
-        $this->postJson('/api/pagos', $this->datosPago())
+        $this->pagar()
             ->assertOk()
-            ->assertJsonPath('data.id', $primero->json('data.id'));
+            ->assertJsonPath('pago_id', $primero->json('pago_id'))
+            ->assertJsonPath('estado_cobro', 'pagado');
+
         $this->assertDatabaseCount('pagos', 1);
+    }
+
+    public function test_un_cobro_anulado_responde_409(): void
+    {
+        DB::table('cobros')->where('id', $this->cobroId)->update(['estado' => 'anulado']);
+
+        $this->pagar()->assertConflict()->assertJsonStructure(['message']);
+
+        $this->assertDatabaseCount('pagos', 0);
     }
 
     public function test_un_cobro_ya_pagado_no_acepta_otra_referencia(): void
     {
-        $this->postJson('/api/pagos', $this->datosPago())->assertCreated();
+        $this->pagar()->assertCreated();
 
-        $this->postJson('/api/pagos', $this->datosPago(['referencia' => 'CAJA1-0002']))
-            ->assertConflict()
-            ->assertJsonPath('motivo', 'cobro_no_pendiente');
+        $this->pagar(['referencia' => 'CAJA1-20261120-0008'])->assertConflict();
+
         $this->assertDatabaseCount('pagos', 1);
     }
 
     public function test_un_cobro_inexistente_responde_404(): void
     {
-        $this->postJson('/api/pagos', $this->datosPago(['cobro_id' => 9999]))
-            ->assertNotFound()
-            ->assertJsonPath('motivo', 'cobro_no_encontrado');
+        $this->postJson('/api/cobros/9999/pagos', $this->datosPago())->assertNotFound();
     }
 
-    public function test_valida_los_datos_obligatorios(): void
+    public function test_valida_los_datos(): void
     {
-        $this->postJson('/api/pagos', [])
+        $this->postJson("/api/cobros/{$this->cobroId}/pagos", [])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['cobro_id', 'usuario_id', 'medio', 'referencia']);
+            ->assertJsonValidationErrors(['medio', 'referencia', 'usuario_id']);
+
+        $this->pagar(['medio' => 'tarjeta'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['medio']);
     }
 
-    public function test_lista_y_consulta_los_pagos(): void
+    public function test_con_sesion_iniciada_el_operador_es_el_usuario_autenticado(): void
     {
-        $id = $this->postJson('/api/pagos', $this->datosPago())->json('data.id');
+        $this->actingAs(User::findOrFail($this->operadorId))
+            ->postJson("/api/cobros/{$this->cobroId}/pagos", ['medio' => 'efectivo', 'referencia' => self::REFERENCIA])
+            ->assertCreated();
 
-        $this->getJson("/api/pagos?cobro_id={$this->cobroId}")->assertOk()->assertJsonCount(1, 'data');
-        $this->getJson("/api/pagos/{$id}")->assertOk()->assertJsonPath('data.id', $id);
-        $this->getJson('/api/pagos/9999')->assertNotFound();
+        $this->assertDatabaseHas('pagos', ['referencia' => self::REFERENCIA, 'usuario_id' => $this->operadorId]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $cambios
+     */
+    private function pagar(array $cambios = []): TestResponse
+    {
+        return $this->postJson("/api/cobros/{$this->cobroId}/pagos", $this->datosPago($cambios));
     }
 
     /**
@@ -101,10 +132,10 @@ class PagoEndpointTest extends TestCase
     private function datosPago(array $cambios = []): array
     {
         return array_merge([
-            'cobro_id' => $this->cobroId,
-            'usuario_id' => $this->operadorId,
             'medio' => 'efectivo',
-            'referencia' => 'CAJA1-0001',
+            'referencia' => self::REFERENCIA,
+            // Mientras no exista el login, el operador se envia en la peticion.
+            'usuario_id' => $this->operadorId,
         ], $cambios);
     }
 }
