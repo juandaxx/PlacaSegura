@@ -6,13 +6,14 @@ use App\Domain\Cobro\EstadoCobro;
 use App\Domain\Cobro\MedioPago;
 use App\Domain\Cobro\Pago;
 use App\Domain\Cobro\PagoRechazado;
+use App\Domain\Contracts\CobroRepository;
 use App\Domain\Contracts\GestorTransacciones;
 use App\Domain\Contracts\PagoRepository;
 use App\Domain\Contracts\Reloj;
 use App\Domain\Tiempo\DiaOperativo;
 
 /**
- * F-04: registra el pago de un cobro desde la caja del operador.
+ * F-04: registra el pago en efectivo de un cobro desde la caja del operador.
  *
  * - Idempotente: repetir la solicitud con la misma referencia devuelve el pago
  *   ya registrado en lugar de crear otro.
@@ -21,6 +22,7 @@ use App\Domain\Tiempo\DiaOperativo;
 final class RegistrarPago
 {
     public function __construct(
+        private readonly CobroRepository $cobros,
         private readonly PagoRepository $pagos,
         private readonly GestorTransacciones $transacciones,
         private readonly Reloj $reloj,
@@ -33,7 +35,8 @@ final class RegistrarPago
     public function ejecutar(int $cobroId, int $usuarioId, MedioPago $medio, string $referencia): PagoRegistrado
     {
         return $this->transacciones->ejecutar(function () use ($cobroId, $usuarioId, $medio, $referencia) {
-            $cobro = $this->pagos->obtenerCobroParaPago($cobroId)
+            // Bloquea el cobro: no se puede pagar dos veces ni anular al mismo tiempo.
+            $cobro = $this->cobros->obtenerParaActualizar($cobroId)
                 ?? throw PagoRechazado::cobroNoEncontrado($cobroId);
 
             $pagoExistente = $this->pagos->buscarPorReferencia($referencia);
@@ -43,7 +46,7 @@ final class RegistrarPago
                     throw PagoRechazado::referenciaEnOtroCobro($referencia);
                 }
 
-                return new PagoRegistrado($pagoExistente, esNuevo: false);
+                return new PagoRegistrado($pagoExistente, $cobro->estado, esNuevo: false);
             }
 
             if ($cobro->estado !== EstadoCobro::Pendiente) {
@@ -65,9 +68,9 @@ final class RegistrarPago
                 paseHasta: $this->diaOperativo->finDe($cobro->diaOperativo),
             ));
 
-            $this->pagos->cambiarEstadoCobro($cobro->id, EstadoCobro::Pagado);
+            $this->cobros->cambiarEstado($cobro->id, EstadoCobro::Pagado);
 
-            return new PagoRegistrado($pago, esNuevo: true);
+            return new PagoRegistrado($pago, EstadoCobro::Pagado, esNuevo: true);
         });
     }
 }
