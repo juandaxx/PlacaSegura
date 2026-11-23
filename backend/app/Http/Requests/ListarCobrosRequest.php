@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Domain\Cobro\EstadoCobro;
 use App\Domain\Cobro\FiltroCobros;
+use App\Http\Requests\Concerns\NormalizaPlaca;
 use DateTimeImmutable;
 use Illuminate\Validation\Rule;
 
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
  */
 class ListarCobrosRequest extends ListadoRequest
 {
+    use NormalizaPlaca;
+
     /**
      * @return array<string, mixed>
      */
@@ -33,15 +36,5 @@ class ListarCobrosRequest extends ListadoRequest
             diaOperativo: $this->filled('fecha') ? new DateTimeImmutable($this->string('fecha')->value()) : null,
             estado: $this->enum('estado', EstadoCobro::class),
         );
-    }
-
-    /**
-     * Las placas se guardan en mayusculas y sin espacios: "abc 123" se busca como "ABC123".
-     */
-    protected function prepareForValidation(): void
-    {
-        if ($this->filled('placa')) {
-            $this->merge(['placa' => strtoupper(str_replace(' ', '', (string) $this->input('placa')))]);
-        }
     }
 }

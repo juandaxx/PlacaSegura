@@ -40,4 +40,50 @@ final class CobroRepositoryEnMemoria implements CobroRepository
     {
         $this->cobros[$id] = $this->cobros[$id]->conEstado($estado);
     }
+
+    public function buscarDelDia(string $placa, int $sedeId, DateTimeImmutable $diaOperativo): ?Cobro
+    {
+        foreach ($this->cobros as $cobro) {
+            if ($cobro->placa === $placa
+                && $cobro->sedeId === $sedeId
+                && $cobro->diaOperativo->format('Y-m-d') === $diaOperativo->format('Y-m-d')) {
+                return $cobro;
+            }
+        }
+
+        return null;
+    }
+
+    public function ultimoDeLaPlaca(string $placa, int $sedeId): ?Cobro
+    {
+        $ultimo = null;
+
+        foreach ($this->cobros as $cobro) {
+            if ($cobro->placa === $placa && $cobro->sedeId === $sedeId) {
+                $ultimo = $cobro;
+            }
+        }
+
+        return $ultimo;
+    }
+
+    public function crearSiNoExiste(
+        int $sedeId,
+        Tarifa $tarifa,
+        int $eventoIngresoId,
+        string $placa,
+        DateTimeImmutable $diaOperativo,
+    ): Cobro {
+        $existente = $this->buscarDelDia($placa, $sedeId, $diaOperativo);
+
+        if ($existente !== null) {
+            return $existente;
+        }
+
+        $id = $this->cobros === [] ? 1 : max(array_keys($this->cobros)) + 1;
+
+        return $this->cobros[$id] = new Cobro(
+            $id, $sedeId, $placa, $diaOperativo, $tarifa->valor, EstadoCobro::Pendiente, $eventoIngresoId, $tarifa,
+        );
+    }
 }
