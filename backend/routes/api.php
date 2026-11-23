@@ -1,8 +1,14 @@
 <?php
 
+use App\Http\Controllers\Api\CobroController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\TarifaController;
 use Illuminate\Support\Facades\Route;
+
+// F-03 / F-09 Cobros (consulta: ambos roles; anular: administrador)
+Route::get('/cobros', [CobroController::class, 'index']);
+Route::get('/cobros/{cobro}', [CobroController::class, 'show'])->whereNumber('cobro');
+Route::patch('/cobros/{cobro}/anular', [CobroController::class, 'anular'])->whereNumber('cobro');
 
 // F-04 Registro de pago
 Route::get('/pagos', [PagoController::class, 'index']);
