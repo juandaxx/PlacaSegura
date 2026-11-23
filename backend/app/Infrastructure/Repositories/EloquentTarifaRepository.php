@@ -92,6 +92,17 @@ final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifa
         return TarifaMapeo::aEntidad($modelo->fresh(TarifaMapeo::RELACIONES));
     }
 
+    public function aplicable(int $sedeId, int $tipoVehiculoId, int $franjaId): ?Tarifa
+    {
+        $modelo = TarifaModelo::with(TarifaMapeo::RELACIONES)
+            ->where('sede_id', $sedeId)
+            ->where('tipo_vehiculo_id', $tipoVehiculoId)
+            ->where('franja_id', $franjaId)
+            ->first();
+
+        return $modelo === null ? null : TarifaMapeo::aEntidad($modelo);
+    }
+
     public function listar(int $pagina, int $porPagina): Pagina
     {
         $resultado = TarifaModelo::with(TarifaMapeo::RELACIONES)

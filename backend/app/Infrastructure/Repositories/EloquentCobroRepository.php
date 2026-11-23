@@ -8,8 +8,13 @@ use App\Domain\Cobro\FiltroCobros;
 use App\Domain\Comun\Pagina;
 use App\Domain\Contracts\CobroRepository;
 use App\Domain\Contracts\ConsultaCobros;
+use App\Domain\Tarifa\Tarifa;
 use App\Models\Cobro as CobroModelo;
+use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Cobros guardados con los modelos Eloquent. El dominio solo ve la entidad
@@ -52,6 +57,58 @@ final class EloquentCobroRepository implements CobroRepository, ConsultaCobros
     public function cambiarEstado(int $id, EstadoCobro $estado): void
     {
         CobroModelo::whereKey($id)->update(['estado' => $estado->value]);
+    }
+
+    public function buscarDelDia(string $placa, int $sedeId, DateTimeImmutable $diaOperativo): ?Cobro
+    {
+        $modelo = CobroModelo::with(self::RELACIONES)
+            ->where('placa', $placa)
+            ->where('sede_id', $sedeId)
+            ->where('dia_operativo', $diaOperativo->format('Y-m-d'))
+            ->first();
+
+        return $modelo === null ? null : $this->aCobro($modelo);
+    }
+
+    public function ultimoDeLaPlaca(string $placa, int $sedeId): ?Cobro
+    {
+        $modelo = CobroModelo::with(self::RELACIONES)
+            ->where('placa', $placa)
+            ->where('sede_id', $sedeId)
+            ->orderByDesc('dia_operativo')
+            ->orderByDesc('id')
+            ->first();
+
+        return $modelo === null ? null : $this->aCobro($modelo);
+    }
+
+    public function crearSiNoExiste(
+        int $sedeId,
+        Tarifa $tarifa,
+        int $eventoIngresoId,
+        string $placa,
+        DateTimeImmutable $diaOperativo,
+    ): Cobro {
+        try {
+            // Transaccion anidada (savepoint): si la restriccion unica rechaza el
+            // insert, la transaccion principal sigue viva y se lee el cobro existente.
+            // insertGetId guarda dia_operativo como Y-m-d en cualquier motor.
+            $id = DB::transaction(fn () => CobroModelo::query()->insertGetId([
+                'sede_id' => $sedeId,
+                'tarifa_id' => $tarifa->id,
+                'evento_ingreso_id' => $eventoIngresoId,
+                'placa' => $placa,
+                'dia_operativo' => $diaOperativo->format('Y-m-d'),
+                'valor' => $tarifa->valor,
+                'estado' => EstadoCobro::Pendiente->value,
+            ]));
+        } catch (UniqueConstraintViolationException) {
+            return $this->buscarDelDia($placa, $sedeId, $diaOperativo)
+                ?? throw new LogicException('La restriccion unica indico que el cobro del dia ya existe.');
+        }
+
+        return $this->buscarPorId((int) $id)
+            ?? throw new LogicException("No se encontro el cobro {$id} recien creado.");
     }
 
     private function aCobro(CobroModelo $modelo): Cobro
