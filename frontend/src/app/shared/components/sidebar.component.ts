@@ -1,10 +1,12 @@
 import { Component, input, output } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 
 interface NavigationItem {
   readonly label: string;
   readonly icon: string;
   readonly available: boolean;
+  readonly route?: string;
 }
 
 @Component({
@@ -29,19 +31,26 @@ interface NavigationItem {
       <div class="border-t border-white/10 px-6 py-4 text-xs text-sidebar-muted">Sistema de parqueadero</div>
     </aside>
     <ng-template #navItem let-item>
-      <button type="button" [disabled]="!item.available" [attr.aria-disabled]="!item.available"
-        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-sidebar-muted transition hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-75">
-        <span class="grid size-5 place-items-center text-base" aria-hidden="true">{{ item.icon }}</span><span>{{ item.label }}</span>
-      </button>
+      @if (item.available && item.route) {
+        <a [routerLink]="item.route" routerLinkActive="bg-white/10 text-white" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page" (click)="closeMenu.emit()"
+          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-sidebar-muted transition hover:bg-white/5 hover:text-white">
+          <span class="grid size-5 place-items-center text-base" aria-hidden="true">{{ item.icon }}</span><span>{{ item.label }}</span>
+        </a>
+      } @else {
+        <button type="button" disabled [attr.aria-disabled]="true"
+          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-sidebar-muted transition hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-75">
+          <span class="grid size-5 place-items-center text-base" aria-hidden="true">{{ item.icon }}</span><span>{{ item.label }}</span>
+        </button>
+      }
     </ng-template>
   `,
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, RouterLink, RouterLinkActive],
 })
 export class SidebarComponent {
   readonly open = input(false);
   readonly closeMenu = output<void>();
   protected readonly operationItems: NavigationItem[] = [
-    { label: 'Carril de entrada', icon: '↘', available: false },
+    { label: 'Carril de entrada', icon: '↘', available: true, route: '/entrada' },
     { label: 'Carril de salida', icon: '↗', available: false },
     { label: 'Cupos', icon: '▦', available: false },
     { label: 'Portal de pagos', icon: '$', available: false },
