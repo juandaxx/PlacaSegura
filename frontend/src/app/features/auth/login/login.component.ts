@@ -125,7 +125,7 @@ export class LoginComponent {
           this.errorMessage.set('No fue posible iniciar sesión con esos datos.');
           return;
         }
-        void this.router.navigateByUrl('/');
+        void this.router.navigateByUrl('/dashboard');
       },
       error: () => {
         this.isSubmitting.set(false);

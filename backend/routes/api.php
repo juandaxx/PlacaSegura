@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\CobroController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\TarifaController;
@@ -17,3 +18,11 @@ Route::post('/cobros/{cobro}/pagos', [PagoController::class, 'store'])->whereNum
 Route::get('/tarifas', [TarifaController::class, 'index']);
 Route::post('/tarifas', [TarifaController::class, 'store']);
 Route::put('/tarifas/{tarifa}', [TarifaController::class, 'update'])->whereNumber('tarifa');
+
+// Acceso temporal abierto mientras se define la autenticación de la API.
+Route::prefix('dashboard')->group(function (): void {
+    Route::get('/sedes', [DashboardController::class, 'sedes']);
+    Route::get('/resumen', [DashboardController::class, 'resumen']);
+    Route::get('/actividad', [DashboardController::class, 'actividad']);
+    Route::get('/comparativo-sedes', [DashboardController::class, 'comparativo']);
+});
