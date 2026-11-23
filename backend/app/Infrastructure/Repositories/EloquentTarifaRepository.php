@@ -21,13 +21,11 @@ use Illuminate\Database\UniqueConstraintViolationException;
  */
 final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifas
 {
-    private const RELACIONES = ['franja', 'tipoVehiculo'];
-
     public function buscarPorId(int $id): ?Tarifa
     {
-        $modelo = TarifaModelo::with(self::RELACIONES)->find($id);
+        $modelo = TarifaModelo::with(TarifaMapeo::RELACIONES)->find($id);
 
-        return $modelo === null ? null : $this->aTarifa($modelo);
+        return $modelo === null ? null : TarifaMapeo::aEntidad($modelo);
     }
 
     public function idSedeUnica(): ?int
@@ -83,7 +81,7 @@ final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifa
             throw TarifaRechazada::yaExiste();
         }
 
-        return $this->aTarifa($modelo->fresh(self::RELACIONES));
+        return TarifaMapeo::aEntidad($modelo->fresh(TarifaMapeo::RELACIONES));
     }
 
     public function actualizarValor(int $id, string $valor): Tarifa
@@ -91,36 +89,18 @@ final class EloquentTarifaRepository implements TarifaRepository, ConsultaTarifa
         $modelo = TarifaModelo::findOrFail($id);
         $modelo->update(['valor' => $valor]);
 
-        return $this->aTarifa($modelo->fresh(self::RELACIONES));
+        return TarifaMapeo::aEntidad($modelo->fresh(TarifaMapeo::RELACIONES));
     }
 
     public function listar(int $pagina, int $porPagina): Pagina
     {
-        $resultado = TarifaModelo::with(self::RELACIONES)
+        $resultado = TarifaModelo::with(TarifaMapeo::RELACIONES)
             ->orderBy('sede_id')
             ->orderBy('tipo_vehiculo_id')
             ->orderBy('franja_id')
             ->orderBy('id')
             ->paginate(perPage: $porPagina, page: $pagina);
 
-        return new Pagina(
-            elementos: $resultado->getCollection()->map(fn (TarifaModelo $modelo) => $this->aTarifa($modelo))->all(),
-            total: $resultado->total(),
-            numero: $resultado->currentPage(),
-            porPagina: $resultado->perPage(),
-        );
-    }
-
-    private function aTarifa(TarifaModelo $modelo): Tarifa
-    {
-        return new Tarifa(
-            id: (int) $modelo->id,
-            sedeId: (int) $modelo->sede_id,
-            tipoVehiculoId: (int) $modelo->tipo_vehiculo_id,
-            tipoVehiculo: $modelo->tipoVehiculo->nombre,
-            franjaId: (int) $modelo->franja_id,
-            franja: NombreFranja::from($modelo->franja->nombre),
-            valor: (string) $modelo->valor,
-        );
+        return Paginacion::aPagina($resultado, TarifaMapeo::aEntidad(...));
     }
 }
