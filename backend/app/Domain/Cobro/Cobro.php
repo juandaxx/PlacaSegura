@@ -23,6 +23,14 @@ final class Cobro
         public readonly Tarifa $tarifa,
     ) {}
 
+    /**
+     * Un cobro en $0 (por ejemplo, moto con tarifa $0 segun RN-01) no se paga.
+     */
+    public function requierePago(): bool
+    {
+        return (float) $this->valor > 0;
+    }
+
     public function conEstado(EstadoCobro $estado): self
     {
         return new self(

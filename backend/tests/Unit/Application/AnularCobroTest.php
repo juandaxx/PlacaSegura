@@ -5,7 +5,6 @@ namespace Tests\Unit\Application;
 use App\Application\UseCases\AnularCobro;
 use App\Domain\Cobro\AnulacionRechazada;
 use App\Domain\Cobro\EstadoCobro;
-use App\Domain\Contracts\GestorTransacciones;
 use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -21,17 +20,7 @@ class AnularCobroTest extends TestCase
         parent::setUp();
 
         $this->repositorio = new CobroRepositoryEnMemoria;
-
-        $this->anularCobro = new AnularCobro(
-            $this->repositorio,
-            new class implements GestorTransacciones
-            {
-                public function ejecutar(Closure $operacion): mixed
-                {
-                    return $operacion();
-                }
-            },
-        );
+        $this->anularCobro = new AnularCobro($this->repositorio, new TransaccionInmediata);
     }
 
     public function test_anula_un_cobro_pendiente(): void

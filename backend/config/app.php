@@ -65,7 +65,9 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Colombia: el dia operativo empieza a las 06:00 hora local (S-02) y las
+    // fechas de la API van con desfase -05:00, como en la documentacion.
+    'timezone' => env('APP_TIMEZONE', 'America/Bogota'),
 
     /*
     |--------------------------------------------------------------------------
