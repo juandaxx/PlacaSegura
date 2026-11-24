@@ -30,6 +30,13 @@ class DiaOperativoTest extends TestCase
         $this->assertSame('2026-11-21', $fecha->format('Y-m-d'));
     }
 
+    public function test_el_dia_operativo_empieza_a_las_seis_de_su_fecha(): void
+    {
+        $inicio = (new DiaOperativo('06:00'))->inicioDe(new DateTimeImmutable('2026-11-20'));
+
+        $this->assertSame('2026-11-20 06:00:00', $inicio->format('Y-m-d H:i:s'));
+    }
+
     public function test_rechaza_una_hora_de_inicio_invalida(): void
     {
         $this->expectException(InvalidArgumentException::class);

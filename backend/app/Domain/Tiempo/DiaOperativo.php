@@ -41,6 +41,15 @@ final class DiaOperativo
     }
 
     /**
+     * Primer segundo del dia operativo que empieza en la fecha dada.
+     * Ejemplo: 2026-11-20 empieza el 2026-11-20 a las 06:00:00.
+     */
+    public function inicioDe(DateTimeImmutable $fecha): DateTimeImmutable
+    {
+        return $fecha->setTime($this->hora, $this->minuto);
+    }
+
+    /**
      * Ultimo segundo del dia operativo que empieza en la fecha dada.
      * Ejemplo: 2026-11-20 termina el 2026-11-21 a las 05:59:59.
      */

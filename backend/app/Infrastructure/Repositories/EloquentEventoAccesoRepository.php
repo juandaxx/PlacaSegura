@@ -3,18 +3,25 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Domain\Acceso\EventoAcceso;
+use App\Domain\Acceso\FiltroEventos;
 use App\Domain\Acceso\MotivoAcceso;
 use App\Domain\Acceso\TipoEvento;
+use App\Domain\Comun\Pagina;
+use App\Domain\Contracts\ConsultaEventos;
 use App\Domain\Contracts\EventoAccesoRepository;
+use App\Domain\Tiempo\DiaOperativo;
 use App\Models\EventoAcceso as EventoAccesoModelo;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Eventos del carril con el modelo Eloquent. El dominio solo ve la entidad
  * EventoAcceso, nunca el modelo.
  */
-final class EloquentEventoAccesoRepository implements EventoAccesoRepository
+final class EloquentEventoAccesoRepository implements EventoAccesoRepository, ConsultaEventos
 {
     private const RELACIONES = ['carril', 'tipoVehiculo'];
+
+    public function __construct(private readonly DiaOperativo $diaOperativo) {}
 
     public function registrar(EventoAcceso $evento): EventoAcceso
     {
@@ -35,6 +42,28 @@ final class EloquentEventoAccesoRepository implements EventoAccesoRepository
     public function actualizar(EventoAcceso $evento): void
     {
         EventoAccesoModelo::findOrFail($evento->id)->forceFill($this->columnas($evento))->save();
+    }
+
+    public function buscarPorId(int $id): ?EventoAcceso
+    {
+        $modelo = EventoAccesoModelo::with(self::RELACIONES)->find($id);
+
+        return $modelo === null ? null : $this->aEvento($modelo);
+    }
+
+    public function listar(FiltroEventos $filtro, int $pagina, int $porPagina): Pagina
+    {
+        $resultado = EventoAccesoModelo::with(self::RELACIONES)
+            ->when($filtro->placa !== null, fn (Builder $consulta) => $consulta->where('placa', $filtro->placa))
+            ->when($filtro->tipo !== null, fn (Builder $consulta) => $consulta->where('tipo', $filtro->tipo->value))
+            ->when($filtro->diaOperativo !== null, fn (Builder $consulta) => $consulta
+                ->where('fecha_hora', '>=', $this->diaOperativo->inicioDe($filtro->diaOperativo))
+                ->where('fecha_hora', '<=', $this->diaOperativo->finDe($filtro->diaOperativo)))
+            ->orderByDesc('fecha_hora')
+            ->orderByDesc('id')
+            ->paginate(perPage: $porPagina, page: $pagina);
+
+        return Paginacion::aPagina($resultado, $this->aEvento(...));
     }
 
     /**
