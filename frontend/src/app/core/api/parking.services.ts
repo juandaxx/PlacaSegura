@@ -1,13 +1,16 @@
 import { InjectionToken, Provider } from '@angular/core';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { Cobro, Cupo, EventoCarril, Usuario } from '../models/parking.models';
+import { Cobro, Cupo, EstadoBarrera, EventoCarril, Usuario } from '../models/parking.models';
 
 export interface AuthCredentials { readonly username: string; readonly password: string; }
 export interface AuthService {
   currentUser(): Observable<Usuario | null>;
   signIn(credentials: AuthCredentials): Observable<Usuario | null>;
 }
-export interface LaneService { latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril>; }
+export interface LaneService {
+  latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril>;
+  barrierState(lane: 'entrada' | 'salida'): Observable<EstadoBarrera>;
+}
 export interface ParkingCapacityService { getCapacity(): Observable<Cupo[]>; }
 export interface PaymentService { pendingCharge(plate: string): Observable<Cobro | null>; }
 
@@ -36,12 +39,30 @@ export class HttpAuthService implements AuthService {
 }
 export class MockLaneService implements LaneService {
   latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril> {
-    return of({ id: 'demo-event-1', tipo: lane, fecha: '2026-11-20T08:30:00-05:00', placa: 'ABC123' });
+    return of({
+      id: 'demo-event-1',
+      tipo: lane,
+      fecha: '2026-11-20T08:30:00-05:00',
+      placa: 'ABC123',
+      tipoVehiculo: 'carro',
+      confianza: 0.98,
+      lecturaManual: false,
+      sedeNombre: 'Sede principal',
+      carrilNombre: lane === 'entrada' ? 'Carril de entrada 1' : 'Carril de salida 1',
+    });
+  }
+  barrierState(lane: 'entrada' | 'salida'): Observable<EstadoBarrera> {
+    return of(lane === 'entrada'
+      ? { abierta: true }
+      : { abierta: false, motivo: 'Cobro pendiente' });
   }
 }
 export class HttpLaneService implements LaneService {
-  latestEvent(_lane: 'entrada' | 'salida'): Observable<EventoCarril> { // TODO: conectar con el endpoint de carriles.
-    return of({ id: '', tipo: 'entrada', fecha: '', placa: '' });
+  latestEvent(lane: 'entrada' | 'salida'): Observable<EventoCarril> { // TODO: conectar con el endpoint de carriles.
+    return of({ id: '', tipo: lane, fecha: '', placa: '' });
+  }
+  barrierState(_lane: 'entrada' | 'salida'): Observable<EstadoBarrera> { // TODO: conectar con el estado del controlador de barrera.
+    return of({ abierta: false });
   }
 }
 export class MockParkingCapacityService implements ParkingCapacityService {
