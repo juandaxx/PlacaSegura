@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\CobroController;
 use App\Http\Controllers\Api\CupoController;
 use App\Http\Controllers\Api\EventoController;
+use App\Http\Controllers\Api\FranjaController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\TarifaController;
 use Illuminate\Support\Facades\Route;
@@ -28,10 +29,12 @@ Route::patch('/cobros/{cobro}/anular', [CobroController::class, 'anular'])->wher
 // F-04 Registro de pago en efectivo (operador)
 Route::post('/cobros/{cobro}/pagos', [PagoController::class, 'store'])->whereNumber('cobro');
 
-// F-08 Administracion de tarifas (lectura: ambos roles; escritura: administrador)
+// F-08 Administracion de tarifas y franjas (lectura: ambos roles; escritura: administrador)
 Route::get('/tarifas', [TarifaController::class, 'index']);
 Route::post('/tarifas', [TarifaController::class, 'store']);
 Route::put('/tarifas/{tarifa}', [TarifaController::class, 'update'])->whereNumber('tarifa');
+Route::get('/franjas', [FranjaController::class, 'index']);
+Route::put('/franjas/{franja}', [FranjaController::class, 'update'])->whereNumber('franja');
 
 // Acceso temporal abierto mientras se define la autenticación de la API.
 Route::prefix('dashboard')->group(function (): void {
