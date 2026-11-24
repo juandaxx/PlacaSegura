@@ -23,8 +23,8 @@ final class Franja
     public function contiene(DateTimeImmutable $momento): bool
     {
         $hora = $momento->format('H:i:s');
-        $inicio = $this->conSegundos($this->horaInicio);
-        $fin = $this->conSegundos($this->horaFin);
+        $inicio = self::normalizarHora($this->horaInicio);
+        $fin = self::normalizarHora($this->horaFin);
 
         if ($inicio === $fin) {
             return true;
@@ -35,7 +35,20 @@ final class Franja
             : $hora >= $inicio || $hora < $fin;
     }
 
-    private function conSegundos(string $hora): string
+    public function cruzaMedianoche(): bool
+    {
+        return self::normalizarHora($this->horaInicio) > self::normalizarHora($this->horaFin);
+    }
+
+    public function conHorario(string $horaInicio, string $horaFin): self
+    {
+        return new self($this->id, $this->nombre, self::normalizarHora($horaInicio), self::normalizarHora($horaFin));
+    }
+
+    /**
+     * Hora con segundos: "06:00" se trata como "06:00:00".
+     */
+    public static function normalizarHora(string $hora): string
     {
         return strlen($hora) === 5 ? $hora.':00' : $hora;
     }

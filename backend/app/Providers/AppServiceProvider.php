@@ -13,6 +13,7 @@ use App\Domain\Contracts\CupoRepository;
 use App\Domain\Contracts\EventoAccesoRepository;
 use App\Domain\Contracts\FranjaRepository;
 use App\Domain\Contracts\GestionCupos;
+use App\Domain\Contracts\GestionFranjas;
 use App\Domain\Contracts\GestorTransacciones;
 use App\Domain\Contracts\PagoRepository;
 use App\Domain\Contracts\Reloj;
@@ -58,6 +59,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(GestionCupos::class, EloquentCupoRepository::class);
         $this->app->bind(TipoVehiculoRepository::class, EloquentTipoVehiculoRepository::class);
         $this->app->bind(FranjaRepository::class, EloquentFranjaRepository::class);
+        $this->app->bind(GestionFranjas::class, EloquentFranjaRepository::class);
         $this->app->bind(ConfiguracionOperativa::class, EloquentConfiguracionOperativa::class);
     }
 

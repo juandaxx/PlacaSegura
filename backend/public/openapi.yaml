@@ -41,7 +41,7 @@ tags:
   - name: Pagos
     description: Registro del pago en efectivo (F-04).
   - name: Tarifas
-    description: Administración de tarifas por tipo de vehículo y franja (F-08).
+    description: Administración de tarifas por tipo de vehículo y franja, y horarios de las franjas (F-08).
   - name: Eventos y cupos
     description: Consulta de ingresos y salidas (F-09) y cupos por sede (F-07).
   - name: Dashboard
@@ -593,6 +593,80 @@ paths:
         '422':
           $ref: '#/components/responses/ErrorTarifa'
 
+  /franjas:
+    get:
+      tags: [Tarifas]
+      operationId: listarFranjas
+      summary: Ver los horarios de las franjas diurna y nocturna
+      description: |
+        **Rol:** operador y administrador.
+
+        Siempre son dos franjas que cubren las 24 horas; no se pagina. La franja de la hora de ingreso
+        define qué tarifa se cobra.
+      responses:
+        '200':
+          description: Las franjas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaFranjas'
+
+  /franjas/{id}:
+    put:
+      tags: [Tarifas]
+      operationId: cambiarHorarioFranja
+      summary: Cambiar el horario de una franja
+      description: |
+        **Rol:** administrador.
+
+        La otra franja se ajusta sola para cubrir el resto del día: si la diurna pasa a 07:00-18:00,
+        la nocturna queda en 18:00-07:00. Así nunca quedan horas sin franja. La respuesta trae las dos.
+
+        Se rechaza (422) un horario con inicio igual al fin y una diurna que cruce la medianoche (o una
+        nocturna que no la cruce). Los cobros ya generados no cambian (RN-07).
+      parameters:
+        - $ref: '#/components/parameters/IdFranja'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambiarHorarioFranja'
+            example:
+              hora_inicio: '07:00'
+              hora_fin: '18:00'
+      responses:
+        '200':
+          description: La franja cambiada y la ajustada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaFranjas'
+              example:
+                data:
+                  - { id: 1, nombre: diurna, hora_inicio: '07:00', hora_fin: '18:00' }
+                  - { id: 2, nombre: nocturna, hora_inicio: '18:00', hora_fin: '07:00' }
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: No hay exactamente una franja diurna y una nocturna configuradas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Debe haber exactamente una franja diurna y una nocturna para ajustar los horarios.
+        '422':
+          description: Formato inválido, horario sin duración o diurna que cruza la medianoche.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorValidacion'
+              example:
+                message: La franja diurna no puede cruzar la medianoche; la nocturna es la que va de la noche a la mañana.
+                errors:
+                  hora_inicio: [La franja diurna no puede cruzar la medianoche; la nocturna es la que va de la noche a la mañana.]
+
   /dashboard/sedes:
     get:
       tags: [Dashboard]
@@ -711,6 +785,14 @@ components:
       in: path
       required: true
       description: Id de la sede.
+      schema:
+        type: integer
+        example: 1
+    IdFranja:
+      name: id
+      in: path
+      required: true
+      description: Id de la franja.
       schema:
         type: integer
         example: 1
@@ -1384,3 +1466,41 @@ components:
                 minimum: 0
                 maximum: 100000
                 example: 50
+
+    HorarioFranja:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nombre:
+          $ref: '#/components/schemas/Franja'
+        hora_inicio:
+          type: string
+          description: Formato HH:MM. Se incluye.
+          example: '06:00'
+        hora_fin:
+          type: string
+          description: Formato HH:MM. No se incluye; a esa hora empieza la otra franja.
+          example: '18:00'
+
+    ListaFranjas:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HorarioFranja'
+
+    CambiarHorarioFranja:
+      type: object
+      required: [hora_inicio, hora_fin]
+      properties:
+        hora_inicio:
+          type: string
+          description: Formato HH:MM.
+          example: '07:00'
+        hora_fin:
+          type: string
+          description: Formato HH:MM; distinta de la hora de inicio.
+          example: '18:00'
