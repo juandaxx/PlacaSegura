@@ -42,6 +42,8 @@ tags:
     description: Registro del pago en efectivo (F-04).
   - name: Tarifas
     description: Administración de tarifas por tipo de vehículo y franja (F-08).
+  - name: Eventos y cupos
+    description: Consulta de ingresos y salidas (F-09) y cupos por sede (F-07).
   - name: Dashboard
     description: Indicadores del tablero. Acceso abierto mientras se integra la autenticación.
 
@@ -238,6 +240,124 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 message: El evento 120 no está pendiente de validación manual.
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /eventos:
+    get:
+      tags: [Eventos y cupos]
+      operationId: listarEventos
+      summary: Listar ingresos y salidas
+      description: |
+        **Rol:** operador y administrador.
+
+        Eventos del carril, del más reciente al más antiguo. Incluye las lecturas en las que la barrera
+        no abrió; `motivo` y `barrera` indican lo que se decidió.
+      parameters:
+        - name: placa
+          in: query
+          description: Coincidencia exacta. Se normaliza a mayúsculas, sin espacios ni guiones.
+          schema:
+            type: string
+            maxLength: 10
+            example: ABC123
+        - name: fecha
+          in: query
+          description: Día operativo; incluye los eventos de las 06:00 a las 05:59 del día siguiente.
+          schema:
+            type: string
+            format: date
+            example: '2026-11-20'
+        - name: tipo
+          in: query
+          schema:
+            type: string
+            enum: [ingreso, salida]
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/PorPagina'
+      responses:
+        '200':
+          description: Página de eventos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaEventos'
+        '422':
+          $ref: '#/components/responses/ErrorValidacion'
+
+  /eventos/{id}:
+    get:
+      tags: [Eventos y cupos]
+      operationId: verEvento
+      summary: Ver el detalle de un evento
+      description: '**Rol:** operador y administrador.'
+      parameters:
+        - $ref: '#/components/parameters/IdEvento'
+      responses:
+        '200':
+          description: El evento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaEvento'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /sedes/{id}/cupos:
+    get:
+      tags: [Eventos y cupos]
+      operationId: verCupos
+      summary: Ver la ocupación actual por tipo de vehículo
+      description: |
+        **Rol:** operador y administrador.
+
+        `ocupados` cuenta los vehículos que están adentro: su último paso por la sede con la barrera
+        abierta fue un ingreso. Es el mismo cálculo que usa el ingreso para responder `SIN_CUPO`.
+        Si un tipo de vehículo no tiene cupo configurado, `total` y `disponibles` son null (sin límite).
+      parameters:
+        - $ref: '#/components/parameters/IdSede'
+      responses:
+        '200':
+          description: Ocupación de la sede.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuposSede'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags: [Eventos y cupos]
+      operationId: definirCupos
+      summary: Definir los cupos por tipo de vehículo
+      description: |
+        **Rol:** administrador.
+
+        Crea o reemplaza el cupo de cada tipo enviado; los tipos que no se envían conservan su cupo.
+        Se permite un cupo menor a los vehículos que están adentro: `disponibles` queda en 0 hasta que
+        salgan.
+      parameters:
+        - $ref: '#/components/parameters/IdSede'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefinirCupos'
+            example:
+              cupos:
+                - tipo_vehiculo: carro
+                  total: 50
+                - tipo_vehiculo: moto
+                  total: 30
+      responses:
+        '200':
+          description: Ocupación de la sede con los cupos nuevos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuposSede'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
         '422':
           $ref: '#/components/responses/ErrorValidacion'
 
@@ -586,6 +706,14 @@ components:
       schema:
         type: integer
         example: 3
+    IdSede:
+      name: id
+      in: path
+      required: true
+      description: Id de la sede.
+      schema:
+        type: integer
+        example: 1
     Pagina:
       name: page
       in: query
@@ -1143,3 +1271,116 @@ components:
           $ref: '#/components/schemas/GrupoCobros'
         alerta_capacidad:
           type: boolean
+
+    Evento:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 120
+        sede_id:
+          type: integer
+          example: 1
+        carril_id:
+          type: integer
+          example: 1
+        placa:
+          type: string
+          example: ABC123
+        tipo:
+          type: string
+          enum: [ingreso, salida]
+        tipo_vehiculo:
+          type: string
+          example: carro
+        fecha_hora:
+          type: string
+          format: date-time
+          example: '2026-11-20T08:15:00-05:00'
+        confianza:
+          type: number
+          nullable: true
+          example: 0.93
+        lectura_manual:
+          type: boolean
+        usuario_id:
+          type: integer
+          nullable: true
+          description: Operador que validó la placa; null en lecturas automáticas.
+        motivo:
+          type: string
+          enum: [OK, PASE_VIGENTE, LECTURA_MANUAL, SIN_CUPO, COBRO_PENDIENTE]
+          description: Decisión del carril; ver ResultadoAcceso.
+        barrera:
+          type: string
+          enum: [abierta, cerrada]
+
+    RespuestaEvento:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Evento'
+
+    ListaEventos:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evento'
+        links:
+          $ref: '#/components/schemas/EnlacesPaginacion'
+        meta:
+          $ref: '#/components/schemas/MetaPaginacion'
+
+    OcupacionCupo:
+      type: object
+      properties:
+        tipo_vehiculo:
+          type: string
+          example: carro
+        total:
+          type: integer
+          nullable: true
+          description: Cupo configurado; null si no hay límite.
+          example: 50
+        ocupados:
+          type: integer
+          example: 50
+        disponibles:
+          type: integer
+          nullable: true
+          description: Nunca negativo; null si no hay límite. En 0 la pantalla muestra LLENO.
+          example: 0
+
+    CuposSede:
+      type: object
+      properties:
+        sede_id:
+          type: integer
+          example: 1
+        cupos:
+          type: array
+          items:
+            $ref: '#/components/schemas/OcupacionCupo'
+
+    DefinirCupos:
+      type: object
+      required: [cupos]
+      properties:
+        cupos:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [tipo_vehiculo, total]
+            properties:
+              tipo_vehiculo:
+                type: string
+                description: Nombre de un tipo de vehículo configurado; sin repetir.
+                example: carro
+              total:
+                type: integer
+                minimum: 0
+                maximum: 100000
+                example: 50

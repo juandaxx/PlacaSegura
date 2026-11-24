@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AccesoController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\CobroController;
+use App\Http\Controllers\Api\CupoController;
 use App\Http\Controllers\Api\EventoController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\TarifaController;
@@ -12,6 +13,12 @@ use Illuminate\Support\Facades\Route;
 Route::post('/accesos/ingreso', [AccesoController::class, 'ingreso']);
 Route::post('/accesos/salida', [AccesoController::class, 'salida']);
 Route::patch('/eventos/{evento}/placa', [EventoController::class, 'validarPlaca'])->whereNumber('evento');
+
+// F-07 / F-09 Eventos y cupos (consulta: ambos roles; definir cupos: administrador)
+Route::get('/eventos', [EventoController::class, 'index']);
+Route::get('/eventos/{evento}', [EventoController::class, 'show'])->whereNumber('evento');
+Route::get('/sedes/{sede}/cupos', [CupoController::class, 'show'])->whereNumber('sede');
+Route::put('/sedes/{sede}/cupos', [CupoController::class, 'update'])->whereNumber('sede');
 
 // F-03 / F-09 Cobros (consulta: ambos roles; anular: administrador)
 Route::get('/cobros', [CobroController::class, 'index']);
